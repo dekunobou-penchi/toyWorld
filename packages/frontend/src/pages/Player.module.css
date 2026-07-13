@@ -1,0 +1,84 @@
+.title {
+     color: teal;
+   }
+
+
+.dpadRow {
+  display: flex;
+  gap: 16px;   /* ボタン間の隙間 */
+
+}
+.dirButton {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 6px;         /* 角を丸く */
+  border: 1px solid #ccc;     /* 薄いグレーの枠線 */
+  background-color: #f5f5f5;  /* 薄いグレーの背景 */
+  cursor: pointer;            /* マウスを乗せたら指マークに */
+}
+
+.dirButton:hover {
+  background-color: #e0e0e0;  /* ホバーで少し濃く */
+}
+
+.dpad {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;   /* 各段を中央に揃える */
+  width: fit-content;   /* 十字のサイズにする */
+}
+
+.actionButton {
+  padding: 6px 12px;          /* 上下6px、左右12pxの余白 */
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background-color: #f5f5f5;
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  background-color: #e0e0e0;
+}
+
+.actionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.infoBox {
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.infoBox p {
+  margin: 4px 0;   /* 上下の余白を詰める */
+}
+
+.lpValue {
+  font-weight: bold;
+  font-size: 1.2em;
+  color: #d32f2f;   /* 赤系。生命線を強調 */
+}
+
+.controlsWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;   /* dpad と actionRow の間の、大きめの余白 */
+  align-items: center;   /* さっき dpad にあった中央揃えを、こっちに移す */
+  width: fit-content;
+}
+
+.pageLayout {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+}
+
