@@ -127,29 +127,27 @@ curl -X POST http://localhost:3000/api/admin/init   -H "Content-Type: applicatio
 
 ### 2. ゲームを開始する
 
-ゲーム開始する。
-
 ```bash
 curl -X POST http://localhost:3000/api/admin/start
 ```
 
-停止する場合:
+### 3. ゲームを停止する
 
 ```bash
 curl -X POST http://localhost:3000/api/admin/stop
 ```
 
-### 3. プレイヤーとして参加する
+### 4. プレイヤーとして参加する
 
 ブラウザで http://localhost:5173/ を開き、名前・年齢・性別を入力して参加する。参加に成功するとプレイヤー画面に遷移し、アクションを選択できる。
 
 ※初期化（`curl -X POST http://localhost:3000/api/admin/init `）を行ってない場合は参加できない
 
-### 4. 管理者として参加
+### 5. 管理者として参加
 ブラウザで http://localhost:5173/admin を開く
 
 まだ実装途中のため一部機能が不安定となっている
-### 5. 状態確認（デバッグ用）
+### 6. 状態確認（デバッグ用）
 
 サーバの現在の状態を JSON で確認できる。
 
