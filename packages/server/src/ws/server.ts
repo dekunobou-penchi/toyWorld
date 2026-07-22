@@ -13,7 +13,11 @@ export function setupWebSocketServer(server: Server): WebSocketServer {
     console.log("Client has connected");
 
     ws.on('message', (data) => {
-      handleMessage(ws, data);
+      try {
+        handleMessage(ws, data);
+      } catch (e) {
+        console.error('エラー発生:', e)
+      }
     });
 
 

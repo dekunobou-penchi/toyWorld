@@ -81,5 +81,6 @@ export const DEFAULT_GAME_PARAMS: GameParams = {
     lpDecreasePerTick: 1,
     viewRange: 5,
   },
+  transition: 'person',
 };
 

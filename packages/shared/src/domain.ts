@@ -1,3 +1,5 @@
+export type TransitionMode = 'person' | 'agent';
+
 /** 向き（北・東・南・西） */
 export type Direction = 'N' | 'E' | 'S' | 'W';
 
@@ -92,4 +94,5 @@ export interface GameParams {
         lpDecreasePerTick: number;
         viewRange: number;
     };
+    transition: TransitionMode;
 }

@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { conversionEnergyTable, conversionFusionTable, getWorld, initWorld, startGame, stopGame } from "../game/world.js";
 import { DEFAULT_GAME_PARAMS } from "@game/shared";
-
+import { getConnection } from "../ws/connection.js";
 import { createTickTimer } from "../game/ticker.js";
 import { GameStateMessage } from "@game/shared";
 import { getAllConnections } from "../ws/connection.js";
+import { transitionTurn } from "../game/transition.js";
+import { StateMessage } from "@game/shared";
+import { View } from "../game/view.js";
 export function createAdminRouter(): Router {
     const router = Router();
     router.post('/init', (req, res) => {
@@ -31,7 +34,26 @@ export function createAdminRouter(): Router {
             res.status(500).json({ok: false, error: 'server_error'});
             return;
         }
-        createTickTimer(world.params);
+        if(world.params.transition === "person"){
+            createTickTimer(world.params);
+        } else if(world.params.transition === "agent"){
+            //transitionTurn(world);
+            for (const p of world.players.values()){
+                    
+                    const ws = getConnection(p.uid);
+                    if(ws === undefined) {
+                        continue;
+                    }
+                    const state: StateMessage = {
+                        type: 'state',
+                        you: p,
+                        view: View(world, p),
+                        sysmsg: null,
+                    };
+            
+                    ws.send(JSON.stringify(state));
+                }
+        }
         broadcastGameState(true, false);
         res.json({ok: true});
     });

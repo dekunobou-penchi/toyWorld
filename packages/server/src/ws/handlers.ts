@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { findFreePosition, getWorld } from '../game/world.js';
 import { ERROR_CODES } from "@game/shared";
 import { registerConnection, getConnection, getUid, registerAdmin } from "./connection.js";
+import { transitionTurn } from "../game/transition.js";
 
 // handleMessage 関数の外、import の下あたり
 //const connectionToUid = new Map<WebSocket, string>();
@@ -107,6 +108,7 @@ export function handleMessage(ws: WebSocket, data: RawData): void {
             //選択中アクションを更新
             player.selectedAction = msg.action;
             console.log(`[ws] ${player.profile.name} selected: ${msg.action}`);
+            transitionTurn(world);
           };
 
           if (msg.type === 'admin_join'){
