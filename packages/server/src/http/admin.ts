@@ -8,14 +8,27 @@ import { getAllConnections } from "../ws/connection.js";
 import { transitionTurn } from "../game/transition.js";
 import { StateMessage } from "@game/shared";
 import { View } from "../game/view.js";
+import { setupWorldLog, writeMeta } from "../game/worldlog.js";
+
+
 export function createAdminRouter(): Router {
     const router = Router();
     router.post('/init', (req, res) => {
-        const params = req.body;
-        if(Object.keys(req.body).length !== 0){
+        const params = req.body.params;
+        const experiment = req.body.experimentName;
+        if(Object.keys(req.body.params).length !== 0){
             initWorld(params);
+            
         } else {
             initWorld(DEFAULT_GAME_PARAMS);
+        }
+
+        if(req.body.experimentName.length !== undefined && req.body.experimentName?.length !== 0){
+                const world = getWorld();
+                world.experimentName = experiment;
+        } else {
+            const world = getWorld();
+            world.experimentName = null;    
         }
    
         broadcastGameState(false, true);
@@ -34,6 +47,18 @@ export function createAdminRouter(): Router {
             res.status(500).json({ok: false, error: 'server_error'});
             return;
         }
+        //実験名のヌルチェック
+        if(world.experimentName === null){
+            res.status(400).json({ ok: false, error: 'experimentname_null'});
+            return;
+        }
+
+        //実験名をworldのパラメーターとして入力
+        const path = setupWorldLog(world.experimentName);
+        world.logPath = path;
+        writeMeta(world);
+
+
         if(world.params.transition === "person"){
             createTickTimer(world.params);
         } else if(world.params.transition === "agent"){

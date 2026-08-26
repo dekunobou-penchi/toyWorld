@@ -14,11 +14,13 @@ export interface World {
     players: Map<string, Player>;
     energyTable: number[] | null;
     fusionTable: number[][] | null;
+    experimentName: string | null;
+    logPath: string | null;
 }
 
 export function createWorld(): World {
     return {
-        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null
+        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null
     }
 }
 

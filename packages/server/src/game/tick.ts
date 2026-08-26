@@ -4,6 +4,7 @@ import { findFreePosition, getWorld } from "./world.js";
 import { AdminStateMessage, DEFAULT_GAME_PARAMS, GameParams } from "@game/shared";
 import { StateMessage } from "@game/shared";
 import { View } from "./view.js";
+import { writePlayerLog, writeWorldLog } from "./worldlog.js";
 
 export function runTick(): void{
     console.log('[Tick]');
@@ -38,6 +39,10 @@ export function runTick(): void{
         
 
     }
+    for(const p of world.players.values()){
+        writePlayerLog(world, p);
+    }
+    writeWorldLog(world);
 
     //アクションの適用
     for (const p of world.players.values()){
