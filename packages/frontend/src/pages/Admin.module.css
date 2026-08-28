@@ -1,0 +1,17 @@
+.dpad {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mapForm {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.playerForm {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
