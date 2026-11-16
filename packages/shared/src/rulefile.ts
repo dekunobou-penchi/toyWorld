@@ -1,5 +1,7 @@
 import type { GameParams, TransitionMode } from './domain.js';
-import { defaultRuntimeConfig, resolveRuntime } from './rules/registry.js';
+import { createRng } from './rng.js';
+import { GEN_RULES, type ArtifactType, type ArtifactValue } from './rules/generators.js';
+import { defaultRuntimeConfig, resolveParamValues, resolveRuntime } from './rules/registry.js';
 import type { RuleSelection, RuntimeConfig } from './rules/types.js';
 
 /*
@@ -28,12 +30,56 @@ export type Table1D = number[];
 export type Table2D = number[][];
 
 export interface ArtifactSpec {
-    /** レシピ（Step 4 で使う。今は記録するだけ） */
+    /** レシピ：生成ルールを上から順に適用する。空なら baked をそのまま使う（手で作った表など） */
     pipeline: RuleSelection[];
-    /** 手修正（Step 4 で使う。今は記録するだけ） */
-    overrides?: Record<string, unknown>;
+    /** パイプラインで使う乱数のシード。実験のシード（constants.seed）とは別なので、実験のシードを変えても表は変わらない */
+    seed?: number;
+    /** 手修正：パイプラインの結果に上書きする差分。1次元表は "ID"、2次元表は "A,B" をキーにする */
+    overrides?: Record<string, number>;
     /** 結果。サーバーはこれを使う */
     baked: Table1D | Table2D;
+}
+
+/** レシピ（パイプライン＋シード＋手修正）から結果を作る。おかしなところがあれば例外を投げる */
+export function bakeArtifact(spec: Pick<ArtifactSpec, 'pipeline' | 'seed' | 'overrides'>, N: number): ArtifactValue {
+    if (spec.pipeline.length === 0) throw new Error('パイプラインが空です');
+    const rng = createRng(spec.seed ?? 0);
+    let value: ArtifactValue | null = null;
+    let type: ArtifactType | null = null;
+    spec.pipeline.forEach((step, i) => {
+        const def = GEN_RULES[step.rule];
+        if (def === undefined) throw new Error(`${i + 1} 番目：${step.rule} という生成ルールはありません`);
+        if (def.input !== type) {
+            throw new Error(i === 0
+                ? `${i + 1} 番目：${def.name} は加工ルールなので先頭には置けません`
+                : `${i + 1} 番目：${def.name} は ${def.input ?? '生成'} を受け取るルールですが、前の段は ${type} を出します`);
+        }
+        const params = resolveParamValues(`${i + 1} 番目の ${def.name}`, def.params, step.params);
+        value = def.apply(value, params, { N, rng });
+        type = def.output;
+    });
+    const out = JSON.parse(JSON.stringify(value)) as ArtifactValue;
+    for (const [key, v] of Object.entries(spec.overrides ?? {})) {
+        if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`overrides の ${key} が数値ではありません`);
+        if (type === 'table1d') {
+            const id = Number(key);
+            if (!Number.isInteger(id) || id < 1 || id > N) throw new Error(`overrides のキー ${key} は 1〜${N} の ID です`);
+            (out as number[])[id] = v;
+        } else {
+            const [a, b] = key.split(',').map(Number);
+            if (![a, b].every((x) => Number.isInteger(x) && x >= 1 && x <= N)) throw new Error(`overrides のキー ${key} は "A,B"（1〜${N}）です`);
+            (out as number[][])[a][b] = v;
+        }
+    }
+    return out;
+}
+
+/** レシピから artifact を作る（結果を焼き込んだもの） */
+export function makeArtifact(pipeline: RuleSelection[], seed: number, N: number, overrides?: Record<string, number>): ArtifactSpec {
+    const spec: ArtifactSpec = { pipeline, seed, baked: [] };
+    if (overrides && Object.keys(overrides).length > 0) spec.overrides = overrides;
+    spec.baked = bakeArtifact(spec, N);
+    return spec;
 }
 
 export interface RuleFile {
@@ -213,8 +259,25 @@ export function checkRuleFile(x: unknown): RuleFileCheck {
                 errors.push(`artifacts.${name}.baked がありません`);
                 continue;
             }
-            if (Array.isArray(spec.pipeline) && spec.pipeline.length > 0) {
-                warnings.push(`artifacts.${name} のパイプラインからの再生成はまだ対応していません（baked をそのまま使います）`);
+            const pipeline = Array.isArray(spec.pipeline) ? spec.pipeline : [];
+            if (pipeline.length === 0) {
+                if (isObj(spec.overrides) && Object.keys(spec.overrides).length > 0) {
+                    warnings.push(`artifacts.${name}：パイプラインが空なので overrides は使われません（baked をそのまま使います）`);
+                }
+                continue;
+            }
+            if (!(typeof spec.seed === 'number' && Number.isInteger(spec.seed))) {
+                errors.push(`artifacts.${name}.seed は整数です（パイプラインの乱数に使います）`);
+                continue;
+            }
+            try {
+                const rebaked = bakeArtifact(spec as unknown as ArtifactSpec, N);
+                // 古いルールファイルも読めるように、食い違いはエラーではなく警告にする（サーバーは baked を使う）
+                if (JSON.stringify(rebaked) !== JSON.stringify(spec.baked)) {
+                    warnings.push(`artifacts.${name}：baked がレシピから作り直した結果と一致しません（手で直すなら overrides に書いてください）`);
+                }
+            } catch (err) {
+                errors.push(`artifacts.${name}：${(err as Error).message}`);
             }
         }
         const e = a.energyTable;
