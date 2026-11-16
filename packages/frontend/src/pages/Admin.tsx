@@ -1,38 +1,90 @@
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { AdminContext } from "../context/AdminContext";
 import { AdminMapView } from "../components/AdminMapView";
 
-import { DEFAULT_GAME_PARAMS, GameParams, TransitionMode } from "@game/shared";
+import { DEFAULT_GAME_PARAMS, ruleFileFromValues, valuesFromParams, type BasicRuleValues, type TransitionMode } from "@game/shared";
 import styles from './Admin.module.css';
+
+interface LibrarySummary {
+  name: string;
+  version: number;
+  locked: boolean;
+  usedBy: string[];
+  updatedAt: string;
+}
+
+async function postJson(url: string, body: unknown): Promise<{ ok: boolean; [k: string]: unknown }> {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return res.json();
+}
+
+function describeError(r: { [k: string]: unknown }): string {
+  const details = Array.isArray(r.details) ? `：${(r.details as string[]).join(' / ')}` : '';
+  return `${String(r.message ?? r.error ?? 'エラー')}${details}`;
+}
 
 export function Admin() {
 
-  const [params, setParams] = useState(DEFAULT_GAME_PARAMS);
+  // ルールファイルを作るためのフォームの値（エディタができるまでのつなぎ）
+  const [values, setValues] = useState<BasicRuleValues>(valuesFromParams(DEFAULT_GAME_PARAMS));
+  const [ruleName, setRuleName] = useState('basic');
+  const [library, setLibrary] = useState<LibrarySummary[]>([]);
+  const [selected, setSelected] = useState('');
+  const [seedOverride, setSeedOverride] = useState('');
   const [experimentName, setExperimentName] = useState('');
+  const [message, setMessage] = useState('');
   const ctx = useContext(AdminContext);
-    if(!ctx) {
+
+  async function refreshLibrary(select?: string) {
+    const r = await fetch('/api/rules').then((res) => res.json());
+    if (r.ok) {
+      setLibrary(r.rules);
+      if (select !== undefined) setSelected(select);
+    }
+  }
+
+  useEffect(() => { refreshLibrary(); }, []);
+
+  if(!ctx) {
     throw new Error('AdminContextが見つかりません');
   }
 
-  function handleInit(){
-
-    const body = {
-      params: params,
-      experimentName: experimentName,
-
-    }
-    const data = JSON.stringify(body);
-    fetch('/api/admin/init', {
-      method: 'POST',     
-      headers: { 'Content-Type': 'application/json'},
-      body: data    
-    })
-    
+  function setValue<K extends keyof BasicRuleValues>(key: K, value: BasicRuleValues[K]) {
+    setValues({ ...values, [key]: value });
   }
 
+  async function saveRule(rule: unknown) {
+    const r = await postJson('/api/rules', { name: ruleName, rule });
+    if (!r.ok) {
+      setMessage(`保存できませんでした${describeError(r)}`);
+      return;
+    }
+    setMessage(`${r.name} v${r.version} として保存しました`);
+    await refreshLibrary(`${r.name}@${r.version}`);
+  }
 
+  async function handleInit(){
+    if (selected === '') {
+      setMessage('ルールを選んでください');
+      return;
+    }
+    const [name, version] = selected.split('@');
+    const seed = seedOverride === '' ? undefined : Number(seedOverride);
+    const r = await postJson('/api/admin/init', { rule: { name, version: Number(version) }, seed, experimentName });
+    setMessage(r.ok ? `${name} v${version}（シード ${r.seed}）で初期化しました` : `初期化できませんでした${describeError(r)}`);
+  }
 
-
+  function numberInput(key: keyof BasicRuleValues, label: string) {
+    return (
+      <label>{label}: 
+        <input
+          type="number"
+          value={values[key] as number}
+          onChange={(e) => setValue(key, e.target.valueAsNumber as never)}
+        />
+      </label>
+    );
+  }
 
   return (
     <div>
@@ -77,169 +129,85 @@ export function Admin() {
       </div>
 
       <div>
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if(file){
-                const reader = new FileReader();
-                reader.onload = () => {
-                  const text = reader.result;
-                  console.log(text);
-                  fetch('/api/admin/init', {
-                    method: 'POST',     
-                    headers: { 'Content-Type': 'application/json'},
-                    body: text,             
-                  })
-                }
-                reader.readAsText(file);
-            }
-          }}
-        />
-      </div>
-
-      <div>
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if(file){
-                const reader = new FileReader();
-                reader.onload = () => {
-                  const text = reader.result;
-                  console.log(text);
-                  fetch('/api/admin/energy-table', {
-                    method: 'POST',     
-                    headers: { 'Content-Type': 'application/json'},
-                    body: text,             
-                  })
-                }
-                reader.readAsText(file);
-            }
-          }}
-        />
-      </div>
-      <div>
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if(file){
-                const reader = new FileReader();
-                reader.onload = () => {
-                  const text = reader.result;
-                  console.log(text);
-                  fetch('/api/admin/fusion-table', {
-                    method: 'POST',     
-                    headers: { 'Content-Type': 'application/json'},
-                    body: text,             
-                  })
-                }
-                reader.readAsText(file);
-            }
-          }}
-        />
-      </div>
-      <div>
-        <h3>初期設定</h3>
-        <label>遷移時間: </label>
-        <input
-          type="number"
-          value={params.tickIntervalSec}
-          onChange={(e) => setParams({...params, tickIntervalSec: e.target.valueAsNumber})}
-        />
-      </div>
-      <div
-        className={styles.mapForm}
-      >
-        <h4>MapData</h4>
-        <label>Ｘ方向の長さ: 
-          <input
-            type="number"
-            value={params.map.nx}
-            onChange={(e) => setParams({...params, map: {...params.map, nx: e.target.valueAsNumber}})}
-          />
+        <h3>初期化</h3>
+        <label>ルール: 
+          <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+            <option value="">（選んでください）</option>
+            {library.map((r) => (
+              <option key={`${r.name}@${r.version}`} value={`${r.name}@${r.version}`}>
+                {r.name} v{r.version}{r.locked ? '（ロック済み）' : '（下書き）'}
+              </option>
+            ))}
+          </select>
         </label>
-          <label>Y方向の長さ: 
-          <input
-            type="number"
-            value={params.map.ny}
-            onChange={(e) => setParams({...params, map: {...params.map, ny: e.target.valueAsNumber}})}
-          />
-        </label>
-        <label>ブロックの最大値: 
-          <input
-            type="number"
-            value={params.map.blockMax}
-            onChange={(e) => setParams({...params, map: {...params.map, blockMax: e.target.valueAsNumber}})}
-          />
-        </label>
-        <label>ブロックの最小値: 
-          <input
-            type="number"
-            value={params.map.blockMin}
-            onChange={(e) => setParams({...params, map: {...params.map, blockMin: e.target.valueAsNumber}})}
-          />
-        </label>
-      </div>
-
-      <div
-        className={styles.playerForm}
-      >
-        <h4>プレイヤー設定</h4>
-        <label>LP初期値: 
-          <input
-            type="number"
-            value={params.player.lpInitial}
-            onChange={(e) => setParams({...params, player: {...params.player, lpInitial: e.target.valueAsNumber}})}
-          />
-        </label>
-        <label>LP減少値: 
-          <input
-            type="number"
-            value={params.player.lpDecreasePerTick}
-            onChange={(e) => setParams({...params, player: {...params.player, lpDecreasePerTick: e.target.valueAsNumber}})}
-          />
-        </label>
-        <label>視界: 
-          <input
-            type="number"
-            value={params.player.viewRange}
-            onChange={(e) => setParams({...params, player: {...params.player, viewRange: e.target.valueAsNumber}})}
-          />
-        </label>
-        <label>Seed: 
-          <input
-            type="number"
-            value={params.seed}
-            onChange={(e) => setParams({...params, seed: e.target.valueAsNumber})}
-          />
-        </label>  
-      </div>
-      <div>
-        <h4>モード選択</h4>
-        <select value={params.transition} onChange={(e) => setParams({...params, transition: e.target.value as TransitionMode})}>
-          <option value="person">person</option>
-          <option value="agent">agent</option>
-        </select>
-      </div>
-      <div>
-        <h4>実験名</h4> 
-        <input
-          type="text"
-          value={experimentName}
-          onChange={(e) => setExperimentName(e.target.value)}
-        />
-      </div>
-
-      <div>
+        <button onClick={() => refreshLibrary()}>一覧を更新</button>
+        <div>
+          <label>シード（空欄ならルールファイルの値）: 
+            <input type="number" value={seedOverride} onChange={(e) => setSeedOverride(e.target.value)} />
+          </label>
+        </div>
+        <div>
+          <label>実験名: 
+            <input type="text" value={experimentName} onChange={(e) => setExperimentName(e.target.value)} />
+          </label>
+        </div>
         <button onClick={() => handleInit()}>初期化</button>
+        {message && <p>{message}</p>}
       </div>
 
+      <div>
+        <h3>ルールファイルを作ってライブラリに保存</h3>
+        <label>保存する名前: 
+          <input type="text" value={ruleName} onChange={(e) => setRuleName(e.target.value)} />
+        </label>
 
+        <div className={styles.mapForm}>
+          <h4>マップ</h4>
+          {numberInput('nx', 'Ｘ方向の長さ')}
+          {numberInput('ny', 'Y方向の長さ')}
+          {numberInput('N', 'ブロックの種類数 N')}
+        </div>
+
+        <div className={styles.playerForm}>
+          <h4>プレイヤー</h4>
+          {numberInput('lpInitial', 'LP初期値')}
+          {numberInput('lpDecreasePerTick', 'LP減少値')}
+          {numberInput('viewRange', '視界')}
+          {numberInput('seed', 'Seed')}
+        </div>
+
+        <div>
+          <h4>運用</h4>
+          {numberInput('tickIntervalSec', '遷移時間')}
+          <label>モード: 
+            <select value={values.transition} onChange={(e) => setValue('transition', e.target.value as TransitionMode)}>
+              <option value="person">person</option>
+              <option value="agent">agent</option>
+            </select>
+          </label>
+        </div>
+
+        <button onClick={() => saveRule(ruleFileFromValues(values))}>この値でルールファイルを作って保存</button>
+
+        <h4>ルールファイル（JSON）を読み込んで保存</h4>
+        <input
+          type="file"
+          accept=".json"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              try {
+                saveRule(JSON.parse(String(reader.result)));
+              } catch {
+                setMessage('JSON として読めませんでした');
+              }
+            };
+            reader.readAsText(file);
+          }}
+        />
+      </div>
     </div>
 
   );

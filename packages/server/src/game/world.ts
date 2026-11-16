@@ -1,14 +1,16 @@
 import {
   createRngSet,
-  defaultRuntimeConfig,
+  gameParamsFromRuleFile,
   resolveRuntime,
-  DEFAULT_GAME_PARAMS,
   type GameParams,
   type Player,
   type RngSet,
+  type RuleFile,
+  type RuleRef,
   type RuntimeConfig,
   type RuntimeHooks,
 } from "@game/shared";
+
 export interface World {
     initialized: boolean;
     running: boolean;
@@ -29,11 +31,15 @@ export interface World {
     runtimeConfig: RuntimeConfig | null;
     /** 各フックに差している関数 */
     runtime: RuntimeHooks | null;
+    /** 使っているルールファイル（シードの上書きを反映したもの） */
+    ruleFile: RuleFile | null;
+    /** ライブラリから読んだ場合はその場所。それ以外（直接渡された・旧形式の params）は null */
+    ruleRef: RuleRef | null;
 }
 
 export function createWorld(): World {
     return {
-        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null, runtimeConfig: null, runtime: null
+        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null, runtimeConfig: null, runtime: null, ruleFile: null, ruleRef: null
     }
 }
 
@@ -47,34 +53,44 @@ export function getWorld(): World {
 }
 
 //worldの初期化
-export function initWorld(params: GameParams): void {
+/**
+ * ルールファイルから世界を作る。ルールファイルは checkRuleFile を通したものを渡すこと。
+ * seed を渡すとルールファイルの constants.seed を上書きする（同じルールでシードだけ変えて回すため）。
+ */
+export function initWorld(rule: RuleFile, opts: { seed?: number; ref?: RuleRef | null } = {}): void {
   const world = getWorld();
-  const seed = params.seed ?? DEFAULT_GAME_PARAMS.seed;
-  const fullParams: GameParams = { ...params, seed };
-  world.params = fullParams;
+  const seed = opts.seed ?? rule.constants.seed;
+  const ruleFile: RuleFile = structuredClone({ ...rule, constants: { ...rule.constants, seed } });
+  const params = gameParamsFromRuleFile(ruleFile);
+
+  world.ruleFile = ruleFile;
+  world.ruleRef = opts.ref ?? null;
+  world.params = params;
   const rngs = createRngSet(seed);
   world.rngs = rngs;
-  world.energyTable = generateEnergyTable(fullParams.map.blockMin, fullParams.map.blockMax);
-  world.fusionTable = generateFusionTable(fullParams.map.blockMin, fullParams.map.blockMax);
+  world.energyTable = ruleFile.artifacts.energyTable.baked as number[];
+  world.fusionTable = ruleFile.artifacts.fusionTable.baked as number[][];
 
-  // ルールファイル（Step 3）ができるまでは、GameParams から今と同じ挙動の設定を作る
-  const runtimeConfig = defaultRuntimeConfig(fullParams);
+  const runtimeConfig = ruleFile.runtime;
   const runtime = resolveRuntime(runtimeConfig);
   world.runtimeConfig = runtimeConfig;
   world.runtime = runtime;
 
   world.map = {
-    nx: fullParams.map.nx,
-    ny: fullParams.map.ny,
-    blockMax: fullParams.map.blockMax,
+    nx: params.map.nx,
+    ny: params.map.ny,
+    blockMax: params.map.blockMax,
     data: runtime.initMap({
-      params: fullParams,
+      params,
       rng: rngs.initMap,
       artifacts: { energyTable: world.energyTable, fusionTable: world.fusionTable },
       log: () => {},
     }),
   };
   world.players.clear();   // (a) を採用する場合
+  // 初期化したら前の実験は終わり。開始するまで行動は処理せず、前の実験のログにも書かない
+  world.running = false;
+  world.logPath = null;
   world.initialized = true;
 }
 
@@ -90,51 +106,4 @@ export function startGame(): boolean {
 export function stopGame(): void {
   const world = getWorld();
   world.running = false;
-}
-
-export function generateEnergyTable(blockMin: number, blockMax: number): number[] {
-
-  const energy_table: number[] = [];
-  for(let block = blockMin; block < blockMax; block++){
-    energy_table.push(block);
-  }
-  return energy_table;
-}
-
-export function generateFusionTable(blockMin: number, blockMax: number): number[][] {
-  const fusion_table: number[][] = [];
-  
-  for(let y = blockMin; y < blockMax; y++){
-    const row: number[] = [];
-    for(let x = blockMin; x < blockMax; x++){
-      row.push((y+x) % blockMax);
-    }
-    fusion_table.push(row);
-  }
-  return fusion_table;
-}
-
-export function conversionEnergyTable(energy: {[key: string]: number} ): number[]{
-  const arr: number[] = [];
-  arr[0] = 0;
-  for(const [key, value]of Object.entries(energy)){
-    arr[Number(key)] = value;
-  }
-
-  return arr;
-
-}
-
-export function conversionFusionTable(fusion: {[key: string] : {[key: string]: number}}): number[][]{
-  const arr: number[][] = [];
-  arr[0] = [0];
-  for(const [key, value] of Object.entries(fusion)){
-    arr[Number(key)] = []
-    for(const [k, v] of Object.entries(value)){
-      arr[Number(key)][Number(k)] = v; 
-    }
-  }
-  return arr;
-
-
 }
