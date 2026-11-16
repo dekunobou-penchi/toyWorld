@@ -9,6 +9,7 @@ import {
   type RuleRef,
   type RuntimeConfig,
   type RuntimeHooks,
+  type ArtifactValue,
 } from "@game/shared";
 
 export interface World {
@@ -35,11 +36,15 @@ export interface World {
     ruleFile: RuleFile | null;
     /** ライブラリから読んだ場合はその場所。それ以外（直接渡された・旧形式の params）は null */
     ruleRef: RuleRef | null;
+    /** ルールファイルの全 artifact の結果（名前で引く） */
+    artifacts: Record<string, ArtifactValue>;
+    /** 何回目のティックか（開始から数える。events.jsonl に記録する） */
+    tick: number;
 }
 
 export function createWorld(): World {
     return {
-        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null, runtimeConfig: null, runtime: null, ruleFile: null, ruleRef: null
+        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null, runtimeConfig: null, runtime: null, ruleFile: null, ruleRef: null, artifacts: {}, tick: 0
     }
 }
 
@@ -68,8 +73,9 @@ export function initWorld(rule: RuleFile, opts: { seed?: number; ref?: RuleRef |
   world.params = params;
   const rngs = createRngSet(seed);
   world.rngs = rngs;
-  world.energyTable = ruleFile.artifacts.energyTable.baked as number[];
-  world.fusionTable = ruleFile.artifacts.fusionTable.baked as number[][];
+  world.artifacts = Object.fromEntries(Object.entries(ruleFile.artifacts).map(([name, a]) => [name, a.baked]));
+  world.energyTable = world.artifacts.energyTable as number[];
+  world.fusionTable = world.artifacts.fusionTable as number[][];
 
   const runtimeConfig = ruleFile.runtime;
   const runtime = resolveRuntime(runtimeConfig);
@@ -83,7 +89,7 @@ export function initWorld(rule: RuleFile, opts: { seed?: number; ref?: RuleRef |
     data: runtime.initMap({
       params,
       rng: rngs.initMap,
-      artifacts: { energyTable: world.energyTable, fusionTable: world.fusionTable },
+      artifacts: { ...world.artifacts, energyTable: world.energyTable, fusionTable: world.fusionTable },
       log: () => {},
     }),
   };
@@ -91,6 +97,7 @@ export function initWorld(rule: RuleFile, opts: { seed?: number; ref?: RuleRef |
   // 初期化したら前の実験は終わり。開始するまで行動は処理せず、前の実験のログにも書かない
   world.running = false;
   world.logPath = null;
+  world.tick = 0;
   world.initialized = true;
 }
 

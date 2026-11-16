@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useEffect, useState } from "react";
 import { GameClient } from "../ws/client";
-import { Player, ServerMessage } from "@game/shared";
+import { AdminStateMessage, Player, ServerMessage } from "@game/shared";
 
 
 
@@ -9,6 +9,7 @@ export interface AdminContextValue{
     map: {nx: number, ny: number, data: number[][]} | null;
     running: boolean;
     players: Player[] | [];
+    distribution: AdminStateMessage["distribution"];
 }
 
 export const AdminContext = createContext<AdminContextValue | null>(null);
@@ -19,6 +20,7 @@ export function AdminProvider({ children }: { children: ReactNode}){
     const [map, setMap] = useState<{nx: number, ny: number, data: number[][]} | null>(null);
     const [running, setRunning] = useState(false);
     const [players, setPlayer] = useState<Player[] | []>([]);
+    const [distribution, setDistribution] = useState<AdminStateMessage["distribution"]>(null);
 
     useEffect(() => {
         const c = new GameClient();
@@ -43,6 +45,7 @@ export function AdminProvider({ children }: { children: ReactNode}){
             setMap(msg.map);
             setPlayer(msg.players);
             setRunning(msg.running);
+            setDistribution(msg.distribution ?? null);
         }
     }
 
@@ -50,7 +53,8 @@ export function AdminProvider({ children }: { children: ReactNode}){
         client,
         map,
         running,
-        players
+        players,
+        distribution
     };
 
     return (

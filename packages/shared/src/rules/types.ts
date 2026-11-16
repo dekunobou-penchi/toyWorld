@@ -15,10 +15,11 @@ export interface RuleWorld {
     players: ReadonlyMap<string, Readonly<Player>>;
 }
 
-/** 生成ルールで作ったデータ。Step 3 でルールファイルの artifacts に置き換わる */
+/** 生成ルールで作ったデータ（ルールファイルの artifacts の baked）。名前で引く */
 export interface Artifacts {
     energyTable: number[] | null;
     fusionTable: number[][] | null;
+    [name: string]: number[] | number[][] | null | undefined;
 }
 
 /** 環境イベントの記録用（今は何もしない。Step 5 の補充ログで使う） */
@@ -81,7 +82,7 @@ export type ParamSpec =
     | { type: 'integer'; default: number; min?: number; max?: number }
     | { type: 'boolean'; default: boolean }
     | { type: 'enum'; default: string; options: readonly string[] }
-    | { type: 'artifact'; default: keyof Artifacts; artifactType: 'table1d' | 'table2d' | 'distribution' };
+    | { type: 'artifact'; default: string; artifactType: 'table1d' | 'table2d' | 'distribution' };
 
 export type ParamValues = Record<string, unknown>;
 

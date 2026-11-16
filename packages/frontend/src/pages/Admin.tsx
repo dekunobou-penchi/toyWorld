@@ -99,6 +99,28 @@ export function Admin() {
       <div>
         {ctx.map && <AdminMapView nx={ctx.map.nx} ny={ctx.map.ny} data={ctx.map.data} players={ctx.players} /> }
       </div>
+      {ctx.distribution && (
+        <div>
+          <h3>目標分布とのズレ</h3>
+          <p>L1：{ctx.distribution.l1.toFixed(3)}</p>
+          {ctx.distribution.target.length <= 21 && (
+            <table>
+              <thead>
+                <tr><th>ID</th><th>目標</th><th>今</th></tr>
+              </thead>
+              <tbody>
+                {ctx.distribution.target.slice(1).map((p, i) => (
+                  <tr key={i + 1}>
+                    <td>{i + 1}</td>
+                    <td>{p.toFixed(3)}</td>
+                    <td>{ctx.distribution!.current[i + 1].toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
       <div>
         <table>
           <thead>

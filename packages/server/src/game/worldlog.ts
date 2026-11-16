@@ -55,6 +55,14 @@ export function writePlayerLog(world: World, player: Player){
 
 }
 
+/** 環境が起こした変化（補充など）を events.jsonl に 1 行ずつ記録する */
+export function writeEvent(world: World, event: Record<string, unknown>){
+    if(world.logPath === null){
+        return;
+    }
+    appendFileSync(join(world.logPath, 'events.jsonl'), `${JSON.stringify({ tick: world.tick, ...event })}\n`);
+}
+
 export function writeWorldLog(world: World){
     if(world.map !== null && world.logPath !== null){
         const w = {

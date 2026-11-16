@@ -7,13 +7,15 @@ import type { ParamSpec, ParamValues } from './types.js';
  * 旧 PHP 版（MATLAB の genMeng / genMtbl の移植）と同じ手順にしてある。乱数は ctx.rng だけを使う。
  */
 
-export type ArtifactType = 'table1d' | 'table2d';
+export type ArtifactType = 'table1d' | 'table2d' | 'distribution';
 export type ArtifactValue = number[] | number[][];
 
 export interface GenContext {
     /** ブロックの種類数 */
     N: number;
     rng: Rng;
+    /** ルールファイルで自分より前にある artifact の結果（前に作ったものを参照してよい） */
+    artifacts: Record<string, ArtifactValue>;
 }
 
 export interface GenRuleDef {
@@ -144,7 +146,49 @@ export const symmetrize: GenRuleDef = {
     },
 };
 
+/*
+ * 分布（distribution）：長さ N+1、0 番は 0、1〜N の合計が 1。マップ上で各 ID が占める割合（目標分布）に使う
+ */
+
+/** 分布：全部の ID が同じ割合 */
+export const uniformDistribution: GenRuleDef = {
+    name: 'uniformDistribution',
+    input: null,
+    output: 'distribution',
+    params: {},
+    apply: (_input, _p, { N }) => {
+        const t = new Array(N + 1).fill(1 / N);
+        t[0] = 0;
+        return t;
+    },
+};
+
+/**
+ * 分布：エネルギーが高い ID ほど少なくする。重み exp(-lambda × max(エネルギー, 0)) を合計 1 にそろえる。
+ * エネルギーが 0 や負の ID は重み 1（一番多い）になる。
+ */
+export const fromEnergy: GenRuleDef = {
+    name: 'fromEnergy',
+    input: null,
+    output: 'distribution',
+    params: {
+        source: { type: 'artifact', default: 'energyTable', artifactType: 'table1d' },
+        lambda: { type: 'number', default: 0.05, min: 0 },
+    },
+    apply: (_input, p, { N, artifacts }) => {
+        const src = artifacts[p.source as string];
+        if (!Array.isArray(src) || src.length !== N + 1 || Array.isArray(src[1])) {
+            throw new Error(`fromEnergy: ${String(p.source)} は自分より前にある 1次元表を指定してください`);
+        }
+        const e = src as number[];
+        const w = new Array(N + 1).fill(0);
+        for (let i = 1; i <= N; i++) w[i] = Math.exp(-num(p.lambda) * Math.max(e[i], 0));
+        const sum = w.reduce((a, b) => a + b, 0);
+        return w.map((v) => v / sum);
+    },
+};
+
 /** 生成ルールの一覧。新しい生成ルールはここに足す */
 export const GEN_RULES: Record<string, GenRuleDef> = Object.fromEntries(
-    [accelCurve, injectNegatives, injectZeros, jumpUp, symmetrize].map((d) => [d.name, d]),
+    [accelCurve, injectNegatives, injectZeros, jumpUp, symmetrize, uniformDistribution, fromEnergy].map((d) => [d.name, d]),
 );

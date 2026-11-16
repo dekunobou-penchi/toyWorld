@@ -14,6 +14,11 @@
  *   --EzN 10 --EzNst 10        エネルギー 0 のブロックの個数と、どの ID より大きいところから選ぶか
  *   --Mnup 1 --Mnpath 1        融合のジャンプアップ（いくつ上がるか、1 行に何個か）
  *   --viewRange 5 --lpInitial 100 --lpDecreasePerTick 1 --tickIntervalSec 5 --transition agent
+ *   --target none              目標分布：none（使わない）/ uniform（全部同じ割合）/ energy（エネルギーが高いほど少なく）
+ *   --lambda 0.05              target = energy のときの減り方
+ *   --alpha 0.2                target を使うときの補充の α（目標に足りない分をどれだけ優先するか）
+ *   --observe forwardLine      見せ方：forwardLine / forwardLineThrough（透視）/ surround（周囲）/ cone（扇形）
+ *   --range 0                  observe の広さ（0 なら forwardLine は viewRange、surround は 1、cone は 3）
  *
  * 表の性質（0・負の個数、対称性、ジャンプアップの数など）は標準エラーに出す。
  */
@@ -21,6 +26,7 @@ import {
     checkRuleFile,
     makeArtifact,
     ruleFileFromValues,
+    targetCounts,
     type RuleFile,
     type TransitionMode,
 } from "../packages/shared/src/index.ts";
@@ -30,7 +36,9 @@ const defaults = {
     Estart: 1, Eend: 100, EmN: 3, EmNst: 10, EzN: 10, EzNst: 10,
     Mnup: 1, Mnpath: 1,
     viewRange: 5, lpInitial: 100, lpDecreasePerTick: 1, tickIntervalSec: 5, transition: "agent",
+    target: "none", lambda: 0.05, alpha: 0.2, observe: "forwardLine", range: 0,
 };
+const STRING_OPTIONS = ["transition", "target", "observe"];
 type Options = typeof defaults;
 
 function parseArgs(argv: string[]): Options {
@@ -39,7 +47,7 @@ function parseArgs(argv: string[]): Options {
         const key = argv[i].replace(/^--/, "");
         if (!(key in defaults)) throw new Error(`--${key} というオプションはありません`);
         const raw = argv[i + 1];
-        o[key] = key === "transition" ? raw : Number(raw);
+        o[key] = STRING_OPTIONS.includes(key) ? raw : Number(raw);
     }
     return o as Options;
 }
@@ -59,6 +67,38 @@ export function makeRule(o: Options): RuleFile {
         { rule: "jumpUp", params: { Mnup: o.Mnup, Mnpath: o.Mnpath } },
         { rule: "symmetrize" },
     ], o.artifactSeed, o.N);
+
+    if (o.target !== "none") {
+        const pipeline = o.target === "uniform"
+            ? [{ rule: "uniformDistribution" }]
+            : o.target === "energy"
+                ? [{ rule: "fromEnergy", params: { source: "energyTable", lambda: o.lambda } }]
+                : null;
+        if (pipeline === null) throw new Error(`--target は none / uniform / energy のどれかです`);
+        rule.artifacts.targetDistribution = makeArtifact(pipeline, o.artifactSeed, o.N, undefined, {
+            energyTable: rule.artifacts.energyTable.baked,
+        });
+        rule.runtime.initMap = { rule: "shuffledTarget", params: { target: "targetDistribution" } };
+        rule.runtime.refill = { rule: "mixedRefill", params: { alpha: o.alpha, target: "targetDistribution" } };
+    }
+
+    const range = o.range > 0 ? o.range : undefined;
+    switch (o.observe) {
+        case "forwardLine":
+            rule.runtime.observe = { rule: "forwardLine", params: { range: range ?? o.viewRange, occlusion: true } };
+            break;
+        case "forwardLineThrough":
+            rule.runtime.observe = { rule: "forwardLine", params: { range: range ?? o.viewRange, occlusion: false } };
+            break;
+        case "surround":
+            rule.runtime.observe = { rule: "surround", params: { radius: range ?? 1 } };
+            break;
+        case "cone":
+            rule.runtime.observe = { rule: "cone", params: { range: range ?? 3 } };
+            break;
+        default:
+            throw new Error(`--observe は forwardLine / forwardLineThrough / surround / cone のどれかです`);
+    }
     return rule;
 }
 
@@ -93,6 +133,10 @@ export function describe(rule: RuleFile): string[] {
         `融合表：対称 = ${symmetric}、結果の範囲 = ${Math.min(...ids.flatMap((i) => ids.map((j) => f[i][j])))}〜${Math.max(...ids.flatMap((i) => ids.map((j) => f[i][j])))}`,
         `ジャンプアップの数（行ごと）：${[...new Set(jumps)].sort((a, b) => a - b).join(" / ")}（0 の行：${ids.filter((i) => jumps[i - 1] === 0).join(", ") || "なし"}）`,
         `ID 1 だけから融合で作れるブロック：${reach.size} 種類（最高 ID ${Math.max(...reach)}）`,
+        ...(rule.artifacts.targetDistribution
+            ? [`目標分布（${rule.constants.nx * rule.constants.ny} マス換算の個数）：${targetCounts(rule.artifacts.targetDistribution.baked as number[], rule.constants.nx * rule.constants.ny).slice(1).join(", ")}`]
+            : []),
+        `補充：${rule.runtime.refill.rule}、見せ方：${rule.runtime.observe.rule} ${JSON.stringify(rule.runtime.observe.params ?? {})}`,
     ];
 }
 

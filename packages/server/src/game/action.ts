@@ -1,6 +1,7 @@
 import { GameParams, Player, Position, getPlayerAt as findPlayerAt } from "@game/shared";
 import {  World } from "./world.js";
 import { isReady, ruleCtx } from "./rules.js";
+import { writeEvent } from "./worldlog.js";
 
 
 
@@ -58,6 +59,7 @@ export function applyAction(player: Player, world: World): void{
                         // マスを空にしてから補充ルールを呼ぶ
                         map.data[pos.y][pos.x] = 0;
                         map.data[pos.y][pos.x] = runtime.refill(ruleCtx(world, world.rngs.refill), pos, "get");
+                        writeEvent(world, { kind: "refill", cause: "get", x: pos.x, y: pos.y, block: map.data[pos.y][pos.x], taken: block, by: player.uid });
                     } else {
                         //const block = map.data[pos.y][pos.x];
                         map.data[pos.y][pos.x] = player.hold;
@@ -128,10 +130,12 @@ export function applyAction(player: Player, world: World): void{
                 } else {
                     if(map.data[pos.y][pos.x] !== 0){
                         if(world.fusionTable !== null){
-                            player.hold = runtime.fusion(ruleCtx(world, world.rngs.fusion), player.hold, map.data[pos.y][pos.x], "map");
+                            const taken = map.data[pos.y][pos.x];
+                            player.hold = runtime.fusion(ruleCtx(world, world.rngs.fusion), player.hold, taken, "map");
                             // マスを空にしてから補充ルールを呼ぶ
                             map.data[pos.y][pos.x] = 0;
                             map.data[pos.y][pos.x] = runtime.refill(ruleCtx(world, world.rngs.refill), pos, "fusion");
+                            writeEvent(world, { kind: "refill", cause: "fusion", x: pos.x, y: pos.y, block: map.data[pos.y][pos.x], taken, by: player.uid });
                         }
                     }
                 }
