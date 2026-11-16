@@ -19,7 +19,8 @@ export function writeMeta(world: World){
         experimentName: world.experimentName,
         params: world.params,
         energyTable: world.energyTable,
-        fusionTable: world.fusionTable
+        fusionTable: world.fusionTable,
+        runtime: world.runtimeConfig
     };
     const data = JSON.stringify(meta);
     if(world.logPath !== null){

@@ -1,25 +1,16 @@
-import { GameParams, Player, Position } from "@game/shared";
+import { GameParams, Player, Position, getPlayerAt as findPlayerAt } from "@game/shared";
 import {  World } from "./world.js";
+import { isReady, ruleCtx } from "./rules.js";
 
 
 
 export function applyAction(player: Player, world: World): void{
+    if(!isReady(world)){
+        return;
+    }
     const map = world.map;
     const params = world.params;
-    const rngs = world.rngs;
-    if(map === null){
-        return;
-    }
-    if(params === null) {
-        return;
-    }
-    if(world.rngs === null){
-        return;
-    }
-
-    const blockMax = params.map.blockMax;
-    const blockMin = params.map.blockMin;
-  
+    const runtime = world.runtime;
 
     switch (player.selectedAction) {
         case "N":
@@ -64,7 +55,9 @@ export function applyAction(player: Player, world: World): void{
                 if(block !== 0){
                     if(player.hold === 0){
                         player.hold = block;
-                        map.data[pos.y][pos.x] = Math.floor(world.rngs.refill() * (blockMax - blockMin) + blockMin); 
+                        // マスを空にしてから補充ルールを呼ぶ
+                        map.data[pos.y][pos.x] = 0;
+                        map.data[pos.y][pos.x] = runtime.refill(ruleCtx(world, world.rngs.refill), pos, "get");
                     } else {
                         //const block = map.data[pos.y][pos.x];
                         map.data[pos.y][pos.x] = player.hold;
@@ -111,7 +104,7 @@ export function applyAction(player: Player, world: World): void{
         case "eat": {
             if(player.hold !== 0){
                 if(world.energyTable !== null){
-                    const energy = world.energyTable[player.hold];
+                    const energy = runtime.energy(ruleCtx(world, world.rngs.energy), player.hold);
                     player.lp += energy;
                     player.hold = 0;
                 }
@@ -127,7 +120,7 @@ export function applyAction(player: Player, world: World): void{
                 if(other_player !== null){
                     if(other_player.hold !== 0){
                         if(world.fusionTable !== null){
-                            player.hold = world.fusionTable[player.hold][other_player.hold];
+                            player.hold = runtime.fusion(ruleCtx(world, world.rngs.fusion), player.hold, other_player.hold, "player");
                             other_player.hold = 0;
                         }
                     }
@@ -135,8 +128,10 @@ export function applyAction(player: Player, world: World): void{
                 } else {
                     if(map.data[pos.y][pos.x] !== 0){
                         if(world.fusionTable !== null){
-                            player.hold = world.fusionTable[player.hold][map.data[pos.y][pos.x]];
-                            map.data[pos.y][pos.x] = Math.floor(world.rngs.refill() * (blockMax - blockMin) + blockMin);
+                            player.hold = runtime.fusion(ruleCtx(world, world.rngs.fusion), player.hold, map.data[pos.y][pos.x], "map");
+                            // マスを空にしてから補充ルールを呼ぶ
+                            map.data[pos.y][pos.x] = 0;
+                            map.data[pos.y][pos.x] = runtime.refill(ruleCtx(world, world.rngs.refill), pos, "fusion");
                         }
                     }
                 }
@@ -180,13 +175,6 @@ export function getFrontPosition(player: Player, params: GameParams): Position{
 }
 
 export function getPlayerAt(pos: Position, world: World, selfuid: string): Player | null{
-    for (const other of world.players.values()){
-        if(other.uid === selfuid){
-           continue;
-        }
-        if(other.pos.x === pos.x && other.pos.y === pos.y) {
-            return other
-        }
-    }
-    return null;
+    // 中身は @game/shared に移した（ルールからも使うため）
+    return findPlayerAt(pos, world.players, selfuid) as Player | null;
 }

@@ -1,7 +1,14 @@
-import { createRngSet, type GameParams, type Player, type Position, type RngSet} from "@game/shared";
-import { validateHeaderValue } from "node:http";
-import type { Rng } from "@game/shared";
-import { DEFAULT_GAME_PARAMS } from "@game/shared";
+import {
+  createRngSet,
+  defaultRuntimeConfig,
+  resolveRuntime,
+  DEFAULT_GAME_PARAMS,
+  type GameParams,
+  type Player,
+  type RngSet,
+  type RuntimeConfig,
+  type RuntimeHooks,
+} from "@game/shared";
 export interface World {
     initialized: boolean;
     running: boolean;
@@ -18,11 +25,15 @@ export interface World {
     experimentName: string | null;
     logPath: string | null;
     rngs: RngSet | null;
+    /** 各フックに差しているルールの設定（meta.json に記録する） */
+    runtimeConfig: RuntimeConfig | null;
+    /** 各フックに差している関数 */
+    runtime: RuntimeHooks | null;
 }
 
 export function createWorld(): World {
     return {
-        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null
+        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null, runtimeConfig: null, runtime: null
     }
 }
 
@@ -35,74 +46,36 @@ export function getWorld(): World {
   return world;
 }
 
-//mapの生成（ランダム）
-export function generateMap(
-  nx: number,
-  ny: number,
-  blockMin: number,
-  blockMax: number,
-  rng: Rng
-): number[][] {
-  const data: number[][] = [];
-  //blockMin = 0;
-  //blockMax = 0;
-  for (let y = 0; y < ny; y++) {
-    const row: number[] = [];
-    for (let x = 0; x < nx; x++) {
-      // row に ランダムなブロックID を push
-      row.push(Math.floor(rng() * (blockMax - blockMin) + blockMin));
-    }
-    data.push(row);
-  }
-  return data;
-}
-
 //worldの初期化
 export function initWorld(params: GameParams): void {
-  console.log('seed:', params.seed);
   const world = getWorld();
   const seed = params.seed ?? DEFAULT_GAME_PARAMS.seed;
-  world.params = { ...params, seed};
-  const rngs = createRngSet(params.seed);
+  const fullParams: GameParams = { ...params, seed };
+  world.params = fullParams;
+  const rngs = createRngSet(seed);
   world.rngs = rngs;
+  world.energyTable = generateEnergyTable(fullParams.map.blockMin, fullParams.map.blockMax);
+  world.fusionTable = generateFusionTable(fullParams.map.blockMin, fullParams.map.blockMax);
+
+  // ルールファイル（Step 3）ができるまでは、GameParams から今と同じ挙動の設定を作る
+  const runtimeConfig = defaultRuntimeConfig(fullParams);
+  const runtime = resolveRuntime(runtimeConfig);
+  world.runtimeConfig = runtimeConfig;
+  world.runtime = runtime;
+
   world.map = {
-    nx: params.map.nx,
-    ny: params.map.ny,
-    blockMax: params.map.blockMax,
-    data: generateMap(params.map.nx, params.map.ny, params.map.blockMin, params.map.blockMax, rngs.initMap),
+    nx: fullParams.map.nx,
+    ny: fullParams.map.ny,
+    blockMax: fullParams.map.blockMax,
+    data: runtime.initMap({
+      params: fullParams,
+      rng: rngs.initMap,
+      artifacts: { energyTable: world.energyTable, fusionTable: world.fusionTable },
+      log: () => {},
+    }),
   };
   world.players.clear();   // (a) を採用する場合
   world.initialized = true;
-  world.energyTable = generateEnergyTable(params.map.blockMin,params.map.blockMax);
-  world.fusionTable = generateFusionTable(params.map.blockMin, params.map.blockMax);
-}
-
-export function findFreePosition(
-  nx: number,
-  ny: number,
-  players: Map<string, Player>,
-  rng: Rng
-): Position | null {
-  const used = new Set<string>();
-  for (const p of players.values()) {
-    used.add(`${p.pos.x}, ${p.pos.y}`);
-  }
-
-  //空きマスを集める
-  const free: Position[] = [];
-  for(let y = 0; y < ny; y++){
-    for(let x = 0; x < nx; x++){
-      if(!used.has(`${x}, ${y}`)){
-        free.push({x, y});
-      }
-    }
-  }
-  //空きがなければnull
-  if(free.length === 0){
-    return null;
-  }
-  //空きがあればランダムに1つ選ぶ
-  return free[Math.floor(rng() * free.length)];
 }
 
 export function startGame(): boolean {
