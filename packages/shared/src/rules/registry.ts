@@ -23,8 +23,7 @@ export function listRules<H extends HookName>(hook: H): RuleDef<H>[] {
     return Object.values(RULES[hook]);
 }
 
-function checkParam(hook: string, rule: string, key: string, spec: ParamSpec, value: unknown): void {
-    const where = `${hook}.${rule}.${key}`;
+function checkParam(where: string, spec: ParamSpec, value: unknown): void {
     switch (spec.type) {
         case 'number':
         case 'integer':
@@ -45,18 +44,23 @@ function checkParam(hook: string, rule: string, key: string, spec: ParamSpec, va
     }
 }
 
-/** 宣言されたパラメータに既定値を補い、型と範囲を確かめる */
-export function resolveParams(def: RuleDef, given: ParamValues = {}): ParamValues {
+/** 宣言されたパラメータに既定値を補い、型と範囲を確かめる（where はエラー表示用の名前） */
+export function resolveParamValues(where: string, specs: Record<string, ParamSpec>, given: ParamValues = {}): ParamValues {
     for (const key of Object.keys(given)) {
-        if (!(key in def.params)) throw new Error(`${def.hook}.${def.name} に ${key} というパラメータはありません`);
+        if (!(key in specs)) throw new Error(`${where} に ${key} というパラメータはありません`);
     }
     const out: ParamValues = {};
-    for (const [key, spec] of Object.entries(def.params)) {
+    for (const [key, spec] of Object.entries(specs)) {
         const value = key in given ? given[key] : spec.default;
-        checkParam(def.hook, def.name, key, spec, value);
+        checkParam(`${where}.${key}`, spec, value);
         out[key] = value;
     }
     return out;
+}
+
+/** フックのルールのパラメータを解決する */
+export function resolveParams(def: RuleDef, given: ParamValues = {}): ParamValues {
+    return resolveParamValues(`${def.hook}.${def.name}`, def.params, given);
 }
 
 function build<H extends HookName>(hook: H, sel: RuleSelection): RuntimeHooks[H] {
