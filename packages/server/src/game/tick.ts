@@ -1,6 +1,7 @@
 import { getAllAdmin, getConnection } from "../ws/connection.js";
 import { applyAction } from "./action.js";
-import { findFreePosition, getWorld } from "./world.js";
+import { getWorld } from "./world.js";
+import { isReady, ruleCtx } from "./rules.js";
 import { AdminStateMessage, DEFAULT_GAME_PARAMS, GameParams } from "@game/shared";
 import { StateMessage } from "@game/shared";
 import { View } from "./view.js";
@@ -25,13 +26,7 @@ export function broadcastAdminState(world: World): void{
 export function runTick(): void{
     console.log('[Tick]');
     const world = getWorld();
-    if(world.params === null){
-        return;
-    }
-    if(world.map === null){
-        return;
-    }
-    if(world.rngs === null){
+    if(!isReady(world)){
         return;
     }
     
@@ -42,18 +37,17 @@ export function runTick(): void{
             p.Ltmax = p.Ltime;
         }
         if(p.lp <= 0){
-            //LPの初期化
-            p.lp = world.params.player.lpInitial;
             //生存時間の初期化
             p.Ltime = 0;
-            p.hold = 0;
 
-            //再配置
-
-            const pos = findFreePosition(world.map.nx, world.map.ny, world.players,world.rngs.respawn);
-            if( pos !== null){
-                p.pos.x = pos.x;
-                p.pos.y = pos.y;
+            //復活後の状態（LP・hold・向き・位置）は respawn ルールが決める
+            const r = world.runtime.respawn(ruleCtx(world, world.rngs.respawn), p);
+            p.lp = r.lp;
+            p.hold = r.hold;
+            p.dir = r.dir;
+            if( r.pos !== null){
+                p.pos.x = r.pos.x;
+                p.pos.y = r.pos.y;
             }
         }
 

@@ -1,8 +1,9 @@
 import { RawData } from "ws";
 import {  type WebSocket } from 'ws';
 import type {  ClientMessage, Player, JoinedMessage, JoinFailedMessage, ErrorMessage} from '@game/shared';
+import { findFreePosition } from '@game/shared';
 import { randomUUID } from 'node:crypto';
-import { findFreePosition, getWorld } from '../game/world.js';
+import { getWorld } from '../game/world.js';
 import { ERROR_CODES } from "@game/shared";
 import { registerConnection, getConnection, getUid, registerAdmin } from "./connection.js";
 import { transitionTurn } from "../game/transition.js";
