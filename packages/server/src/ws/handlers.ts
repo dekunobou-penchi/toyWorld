@@ -20,7 +20,7 @@ export function handleMessage(ws: WebSocket, data: RawData): void {
             //world情報の取得
             const world = getWorld();
             //ワールド初期化確認
-            if(!world.initialized || world.params === null || world.map === null) {
+            if(!world.initialized || world.params === null || world.map === null || world.rngs === null) {
               const failed: JoinFailedMessage = {
                 type: 'join_failed',
                 reason: 'map_not_ready',
@@ -30,7 +30,7 @@ export function handleMessage(ws: WebSocket, data: RawData): void {
               return;
             }
     
-            const pos = findFreePosition(world.map.nx, world.map.ny, world.players);
+            const pos = findFreePosition(world.map.nx, world.map.ny, world.players, world.rngs.spawn);
             
             if(pos === null) {
               const failed: JoinFailedMessage = {

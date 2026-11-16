@@ -1,6 +1,7 @@
-import type { GameParams, Player, Position} from "@game/shared";
+import { createRngSet, type GameParams, type Player, type Position, type RngSet} from "@game/shared";
 import { validateHeaderValue } from "node:http";
-
+import type { Rng } from "@game/shared";
+import { DEFAULT_GAME_PARAMS } from "@game/shared";
 export interface World {
     initialized: boolean;
     running: boolean;
@@ -16,11 +17,12 @@ export interface World {
     fusionTable: number[][] | null;
     experimentName: string | null;
     logPath: string | null;
+    rngs: RngSet | null;
 }
 
 export function createWorld(): World {
     return {
-        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null
+        initialized: false, running: false, params: null, map: null, players: new Map(), energyTable: null, fusionTable: null, experimentName: null, logPath: null, rngs: null
     }
 }
 
@@ -38,7 +40,8 @@ export function generateMap(
   nx: number,
   ny: number,
   blockMin: number,
-  blockMax: number
+  blockMax: number,
+  rng: Rng
 ): number[][] {
   const data: number[][] = [];
   //blockMin = 0;
@@ -47,7 +50,7 @@ export function generateMap(
     const row: number[] = [];
     for (let x = 0; x < nx; x++) {
       // row に ランダムなブロックID を push
-      row.push(Math.floor(Math.random() * (blockMax - blockMin) + blockMin));
+      row.push(Math.floor(rng() * (blockMax - blockMin) + blockMin));
     }
     data.push(row);
   }
@@ -56,13 +59,17 @@ export function generateMap(
 
 //worldの初期化
 export function initWorld(params: GameParams): void {
+  console.log('seed:', params.seed);
   const world = getWorld();
-  world.params = params;
+  const seed = params.seed ?? DEFAULT_GAME_PARAMS.seed;
+  world.params = { ...params, seed};
+  const rngs = createRngSet(params.seed);
+  world.rngs = rngs;
   world.map = {
     nx: params.map.nx,
     ny: params.map.ny,
     blockMax: params.map.blockMax,
-    data: generateMap(params.map.nx, params.map.ny, params.map.blockMin, params.map.blockMax),
+    data: generateMap(params.map.nx, params.map.ny, params.map.blockMin, params.map.blockMax, rngs.initMap),
   };
   world.players.clear();   // (a) を採用する場合
   world.initialized = true;
@@ -73,7 +80,8 @@ export function initWorld(params: GameParams): void {
 export function findFreePosition(
   nx: number,
   ny: number,
-  players: Map<string, Player>
+  players: Map<string, Player>,
+  rng: Rng
 ): Position | null {
   const used = new Set<string>();
   for (const p of players.values()) {
@@ -94,7 +102,7 @@ export function findFreePosition(
     return null;
   }
   //空きがあればランダムに1つ選ぶ
-  return free[Math.floor(Math.random() * free.length)];
+  return free[Math.floor(rng() * free.length)];
 }
 
 export function startGame(): boolean {

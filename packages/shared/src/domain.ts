@@ -95,4 +95,5 @@ export interface GameParams {
         viewRange: number;
     };
     transition: TransitionMode;
+    seed: number
 }

@@ -6,10 +6,14 @@ import {  World } from "./world.js";
 export function applyAction(player: Player, world: World): void{
     const map = world.map;
     const params = world.params;
+    const rngs = world.rngs;
     if(map === null){
         return;
     }
     if(params === null) {
+        return;
+    }
+    if(world.rngs === null){
         return;
     }
 
@@ -60,7 +64,7 @@ export function applyAction(player: Player, world: World): void{
                 if(block !== 0){
                     if(player.hold === 0){
                         player.hold = block;
-                        map.data[pos.y][pos.x] = Math.floor(Math.random() * (blockMax - blockMin) + blockMin); 
+                        map.data[pos.y][pos.x] = Math.floor(world.rngs.refill() * (blockMax - blockMin) + blockMin); 
                     } else {
                         //const block = map.data[pos.y][pos.x];
                         map.data[pos.y][pos.x] = player.hold;
@@ -132,7 +136,7 @@ export function applyAction(player: Player, world: World): void{
                     if(map.data[pos.y][pos.x] !== 0){
                         if(world.fusionTable !== null){
                             player.hold = world.fusionTable[player.hold][map.data[pos.y][pos.x]];
-                            map.data[pos.y][pos.x] = Math.floor(Math.random() * (blockMax - blockMin) + blockMin);
+                            map.data[pos.y][pos.x] = Math.floor(world.rngs.refill() * (blockMax - blockMin) + blockMin);
                         }
                     }
                 }

@@ -211,6 +211,13 @@ export function Admin() {
             onChange={(e) => setParams({...params, player: {...params.player, viewRange: e.target.valueAsNumber}})}
           />
         </label>
+        <label>Seed: 
+          <input
+            type="number"
+            value={params.seed}
+            onChange={(e) => setParams({...params, seed: e.target.valueAsNumber})}
+          />
+        </label>  
       </div>
       <div>
         <h4>モード選択</h4>

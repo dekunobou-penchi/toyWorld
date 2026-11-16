@@ -5,7 +5,23 @@ import { AdminStateMessage, DEFAULT_GAME_PARAMS, GameParams } from "@game/shared
 import { StateMessage } from "@game/shared";
 import { View } from "./view.js";
 import { writePlayerLog, writeWorldLog } from "./worldlog.js";
+import { World } from "./world.js";
 
+export function broadcastAdminState(world: World): void{
+    const admins = getAllAdmin();
+    if(admins.length > 0 && world.map !== null){
+        const admin_state: AdminStateMessage = {
+            type: 'admin_state',
+            running: world.running,
+            map: {nx: world.map.nx, ny: world.map.ny, data: world.map.data},
+            players: Array.from(world.players.values())
+        }
+
+        for(const ws of admins) {
+            ws.send(JSON.stringify(admin_state));
+        }
+    }
+}
 export function runTick(): void{
     console.log('[Tick]');
     const world = getWorld();
@@ -13,6 +29,9 @@ export function runTick(): void{
         return;
     }
     if(world.map === null){
+        return;
+    }
+    if(world.rngs === null){
         return;
     }
     
@@ -27,9 +46,11 @@ export function runTick(): void{
             p.lp = world.params.player.lpInitial;
             //生存時間の初期化
             p.Ltime = 0;
+            p.hold = 0;
 
             //再配置
-            const pos = findFreePosition(world.map.nx, world.map.ny, world.players);
+
+            const pos = findFreePosition(world.map.nx, world.map.ny, world.players,world.rngs.respawn);
             if( pos !== null){
                 p.pos.x = pos.x;
                 p.pos.y = pos.y;
@@ -67,18 +88,6 @@ export function runTick(): void{
         ws.send(JSON.stringify(state));
     }
 
-    const admins = getAllAdmin();
-    if(admins.length > 0){
-        const admin_state: AdminStateMessage = {
-            type: 'admin_state',
-            running: world.running,
-            map: {nx: world.map.nx, ny: world.map.ny, data: world.map.data},
-            players: Array.from(world.players.values())
-        }
-
-        for(const ws of admins) {
-            ws.send(JSON.stringify(admin_state));
-        }
-    }
+    broadcastAdminState(world)
 
 }

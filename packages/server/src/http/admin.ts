@@ -9,6 +9,7 @@ import { transitionTurn } from "../game/transition.js";
 import { StateMessage } from "@game/shared";
 import { View } from "../game/view.js";
 import { setupWorldLog, writeMeta } from "../game/worldlog.js";
+import { broadcastAdminState } from "../game/tick.js";
 
 
 export function createAdminRouter(): Router {
@@ -31,7 +32,8 @@ export function createAdminRouter(): Router {
             world.experimentName = null;    
         }
    
-        broadcastGameState(false, true);
+        //broadcastGameState(false, true);
+        broadcastAdminState(getWorld());
         res.json({ ok: true});
         }
     );

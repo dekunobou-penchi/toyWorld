@@ -8,6 +8,9 @@ export function transitionTurn(world: World): void {
     if(world.params === null){
         return;
     } 
+    if(!world.running){
+        return;
+    }
 
     if(world.params.transition === "agent") {
         // for (const p of world.players.values()){

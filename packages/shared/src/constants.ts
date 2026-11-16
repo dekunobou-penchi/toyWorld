@@ -82,5 +82,6 @@ export const DEFAULT_GAME_PARAMS: GameParams = {
     viewRange: 5,
   },
   transition: 'person',
+  seed: 43
 };
 
