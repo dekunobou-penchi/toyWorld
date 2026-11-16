@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { conversionEnergyTable, conversionFusionTable, getWorld, initWorld, startGame, stopGame } from "../game/world.js";
-import { DEFAULT_GAME_PARAMS } from "@game/shared";
+import { getWorld, initWorld, startGame, stopGame } from "../game/world.js";
+import { checkRuleFile, DEFAULT_GAME_PARAMS, ruleFileFromParams, type GameParams, type RuleFile, type RuleRef } from "@game/shared";
+import { basename } from "node:path";
+import { getRule, LibraryError, lockRule } from "../rules/library.js";
 import { getConnection } from "../ws/connection.js";
 import { createTickTimer } from "../game/ticker.js";
 import { GameStateMessage } from "@game/shared";
@@ -14,27 +16,54 @@ import { broadcastAdminState } from "../game/tick.js";
 
 export function createAdminRouter(): Router {
     const router = Router();
+    /*
+     * 初期化。どのルールを使うかは次のどれかで指定する（上ほど優先）
+     *   rule:     { name, version }  … ライブラリのルールファイル（実験を開始するとロックされる）
+     *   ruleFile: RuleFile           … ルールファイルを直接渡す
+     *   params:   GameParams         … 旧形式。既定の表・既定のルールのルールファイルに変換して使う
+     * seed を渡すとルールファイルのシードを上書きする
+     */
     router.post('/init', (req, res) => {
-        const params = req.body.params;
-        const experiment = req.body.experimentName;
-        if(Object.keys(req.body.params).length !== 0){
-            initWorld(params);
-            
-        } else {
-            initWorld(DEFAULT_GAME_PARAMS);
+        const body = (req.body ?? {}) as { rule?: RuleRef; ruleFile?: unknown; params?: GameParams; seed?: unknown; experimentName?: unknown };
+        let rule: unknown;
+        let ref: RuleRef | null = null;
+        try {
+            if (body.rule !== undefined) {
+                ref = { name: String(body.rule.name), version: Number(body.rule.version) };
+                rule = getRule(ref).rule;
+            } else if (body.ruleFile !== undefined) {
+                rule = body.ruleFile;
+            } else if (body.params !== undefined && Object.keys(body.params).length !== 0) {
+                rule = ruleFileFromParams({ ...DEFAULT_GAME_PARAMS, ...body.params });
+            } else {
+                rule = ruleFileFromParams(DEFAULT_GAME_PARAMS);
+            }
+        } catch (err) {
+            if (err instanceof LibraryError) {
+                res.status(err.code === "not_found" ? 404 : 400).json({ ok: false, error: err.code, message: err.message });
+                return;
+            }
+            throw err;
         }
 
-        if(req.body.experimentName.length !== undefined && req.body.experimentName?.length !== 0){
-                const world = getWorld();
-                world.experimentName = experiment;
-        } else {
-            const world = getWorld();
-            world.experimentName = null;    
+        const { errors, warnings } = checkRuleFile(rule);
+        if (errors.length > 0) {
+            res.status(400).json({ ok: false, error: 'invalid_rule', details: errors });
+            return;
         }
-   
-        //broadcastGameState(false, true);
-        broadcastAdminState(getWorld());
-        res.json({ ok: true});
+        const seed = body.seed;
+        if (seed !== undefined && seed !== null && !(typeof seed === 'number' && Number.isInteger(seed))) {
+            res.status(400).json({ ok: false, error: 'invalid_seed', message: 'seed は整数です' });
+            return;
+        }
+        initWorld(rule as RuleFile, { seed: (seed ?? undefined) as number | undefined, ref });
+
+        const world = getWorld();
+        const experiment = body.experimentName;
+        world.experimentName = typeof experiment === 'string' && experiment.length !== 0 ? experiment : null;
+
+        broadcastAdminState(world);
+        res.json({ ok: true, rule: ref, seed: world.ruleFile?.constants.seed, warnings });
         }
     );
 
@@ -59,6 +88,15 @@ export function createAdminRouter(): Router {
         const path = setupWorldLog(world.experimentName);
         world.logPath = path;
         writeMeta(world);
+
+        // ライブラリのルールを使っていたら、その版をロックする
+        if (world.ruleRef !== null) {
+            try {
+                lockRule(world.ruleRef, basename(path));
+            } catch (err) {
+                console.error('[rules] ロックに失敗しました', err);
+            }
+        }
 
 
         if(world.params.transition === "person"){
@@ -91,20 +129,6 @@ export function createAdminRouter(): Router {
         res.json({ok: true});
     })
 
-    router.post('/energy-table', (req, res) => {
-        const world = getWorld();
-        world.energyTable = conversionEnergyTable(req.body.table);
-        res.json({ok: true});
-        //console.log(req.body.table);
-    })
-    
-    router.post('/fusion-table', (req, res) => {
-        const world = getWorld();
-
-        world.fusionTable = conversionFusionTable(req.body.table);
-        res.json({ok: true});
-        //console.log(req.body.table);
-    })
     return router;
 }
 

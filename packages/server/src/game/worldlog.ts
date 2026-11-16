@@ -17,6 +17,8 @@ export function writeMeta(world: World){
    
     const meta = {
         experimentName: world.experimentName,
+        rule: world.ruleRef,
+        ruleFile: world.ruleFile,
         params: world.params,
         energyTable: world.energyTable,
         fusionTable: world.fusionTable,

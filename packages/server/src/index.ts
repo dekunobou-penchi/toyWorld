@@ -4,6 +4,7 @@ import { setupWebSocketServer } from './ws/server.js';
 //import { create } from 'node:domain';
 import { getWorld } from './game/world.js';
 import { createAdminRouter } from './http/admin.js';
+import { createRulesRouter } from './http/rules.js';
 
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -19,6 +20,7 @@ setupWebSocketServer(server);
 
 app.use(express.json({limit: '10mb'}));
 app.use('/api/admin', createAdminRouter());
+app.use('/api/rules', createRulesRouter());
 
 server.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
