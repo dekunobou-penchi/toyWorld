@@ -56,10 +56,10 @@ export interface RuleRef {
  * ID 0 は「空」で、ブロックは 1〜N。表は ID をそのまま添字にするので長さ N+1（0 番は使わない）。
  */
 export function blockRange(N: number): { min: number; max: number } {
-    return { min: 0, max: N };
+    return { min: 1, max: N + 1 };
 }
 export function tableSize(N: number): number {
-    return N;
+    return N + 1;
 }
 
 /** 既定のエネルギー表：エネルギー＝ブロックID */
@@ -70,13 +70,13 @@ export function defaultEnergyTable(N: number): Table1D {
     return t;
 }
 
-/** 既定の融合表：(A + B) を N で割った余り */
+/** 既定の融合表：1〜N の中で A + B を巡回させたもの（A と B が 1 のとき 1、足すほど大きくなり N を超えると 1 に戻る） */
 export function defaultFusionTable(N: number): Table2D {
     const size = tableSize(N);
     const t: Table2D = [];
     for (let a = 0; a < size; a++) {
         const row: number[] = [];
-        for (let b = 0; b < size; b++) row.push((a + b) % N);
+        for (let b = 0; b < size; b++) row.push(a === 0 || b === 0 ? 0 : ((a + b - 2) % N) + 1);
         t.push(row);
     }
     return t;

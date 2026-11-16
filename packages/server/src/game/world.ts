@@ -88,6 +88,9 @@ export function initWorld(rule: RuleFile, opts: { seed?: number; ref?: RuleRef |
     }),
   };
   world.players.clear();   // (a) を採用する場合
+  // 初期化したら前の実験は終わり。開始するまで行動は処理せず、前の実験のログにも書かない
+  world.running = false;
+  world.logPath = null;
   world.initialized = true;
 }
 
