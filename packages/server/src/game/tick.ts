@@ -1,12 +1,25 @@
 import { getAllAdmin, getConnection } from "../ws/connection.js";
 import { applyAction } from "./action.js";
 import { getWorld } from "./world.js";
-import { isReady, ruleCtx } from "./rules.js";
+import { isReady, ruleCtx, targetDistributionOf } from "./rules.js";
 import { AdminStateMessage, DEFAULT_GAME_PARAMS, GameParams } from "@game/shared";
 import { StateMessage } from "@game/shared";
 import { View } from "./view.js";
 import { writePlayerLog, writeWorldLog } from "./worldlog.js";
 import { World } from "./world.js";
+
+/** マップ上の今の分布と目標分布のズレ（目標分布を使うルールのときだけ） */
+function distributionGap(world: World): AdminStateMessage["distribution"] {
+    const target = targetDistributionOf(world);
+    if (target === null || world.map === null) return null;
+    const N = target.length - 1;
+    const counts = new Array(N + 1).fill(0);
+    let total = 0;
+    for (const row of world.map.data) for (const v of row) { total += 1; if (v >= 1 && v <= N) counts[v] += 1; }
+    const current = counts.map((c) => c / total);
+    const l1 = target.reduce((acc, p, k) => acc + (k === 0 ? 0 : Math.abs(p - current[k])), 0);
+    return { target, current, l1 };
+}
 
 export function broadcastAdminState(world: World): void{
     const admins = getAllAdmin();
@@ -15,7 +28,8 @@ export function broadcastAdminState(world: World): void{
             type: 'admin_state',
             running: world.running,
             map: {nx: world.map.nx, ny: world.map.ny, data: world.map.data},
-            players: Array.from(world.players.values())
+            players: Array.from(world.players.values()),
+            distribution: distributionGap(world),
         }
 
         for(const ws of admins) {
@@ -29,6 +43,7 @@ export function runTick(): void{
     if(!isReady(world)){
         return;
     }
+    world.tick += 1;
     
     for (const p of world.players.values()){
         p.lp -= world.params.player.lpDecreasePerTick;

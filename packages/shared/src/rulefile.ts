@@ -1,8 +1,8 @@
 import type { GameParams, TransitionMode } from './domain.js';
 import { createRng } from './rng.js';
 import { GEN_RULES, type ArtifactType, type ArtifactValue } from './rules/generators.js';
-import { defaultRuntimeConfig, resolveParamValues, resolveRuntime } from './rules/registry.js';
-import type { RuleSelection, RuntimeConfig } from './rules/types.js';
+import { defaultRuntimeConfig, resolveParamValues, resolveParams, resolveRuntime, RULES } from './rules/registry.js';
+import type { HookName, RuleSelection, RuntimeConfig } from './rules/types.js';
 
 /*
  * ルールファイル：世界の法則と実験の回し方を 1 つにまとめた JSON。
@@ -41,7 +41,12 @@ export interface ArtifactSpec {
 }
 
 /** レシピ（パイプライン＋シード＋手修正）から結果を作る。おかしなところがあれば例外を投げる */
-export function bakeArtifact(spec: Pick<ArtifactSpec, 'pipeline' | 'seed' | 'overrides'>, N: number): ArtifactValue {
+export function bakeArtifact(
+    spec: Pick<ArtifactSpec, 'pipeline' | 'seed' | 'overrides'>,
+    N: number,
+    /** 自分より前にある artifact の結果（fromEnergy などが参照する） */
+    others: Record<string, ArtifactValue> = {},
+): ArtifactValue {
     if (spec.pipeline.length === 0) throw new Error('パイプラインが空です');
     const rng = createRng(spec.seed ?? 0);
     let value: ArtifactValue | null = null;
@@ -55,13 +60,13 @@ export function bakeArtifact(spec: Pick<ArtifactSpec, 'pipeline' | 'seed' | 'ove
                 : `${i + 1} 番目：${def.name} は ${def.input ?? '生成'} を受け取るルールですが、前の段は ${type} を出します`);
         }
         const params = resolveParamValues(`${i + 1} 番目の ${def.name}`, def.params, step.params);
-        value = def.apply(value, params, { N, rng });
+        value = def.apply(value, params, { N, rng, artifacts: others });
         type = def.output;
     });
     const out = JSON.parse(JSON.stringify(value)) as ArtifactValue;
     for (const [key, v] of Object.entries(spec.overrides ?? {})) {
         if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`overrides の ${key} が数値ではありません`);
-        if (type === 'table1d') {
+        if (type === 'table1d' || type === 'distribution') {
             const id = Number(key);
             if (!Number.isInteger(id) || id < 1 || id > N) throw new Error(`overrides のキー ${key} は 1〜${N} の ID です`);
             (out as number[])[id] = v;
@@ -75,11 +80,35 @@ export function bakeArtifact(spec: Pick<ArtifactSpec, 'pipeline' | 'seed' | 'ove
 }
 
 /** レシピから artifact を作る（結果を焼き込んだもの） */
-export function makeArtifact(pipeline: RuleSelection[], seed: number, N: number, overrides?: Record<string, number>): ArtifactSpec {
+export function makeArtifact(
+    pipeline: RuleSelection[],
+    seed: number,
+    N: number,
+    overrides?: Record<string, number>,
+    others: Record<string, ArtifactValue> = {},
+): ArtifactSpec {
     const spec: ArtifactSpec = { pipeline, seed, baked: [] };
     if (overrides && Object.keys(overrides).length > 0) spec.overrides = overrides;
-    spec.baked = bakeArtifact(spec, N);
+    spec.baked = bakeArtifact(spec, N, others);
     return spec;
+}
+
+/** artifact の形が型どおりかを調べる。問題があればその説明、なければ null */
+export function artifactShapeError(type: ArtifactType, value: unknown, N: number): string | null {
+    const size = tableSize(N);
+    const isNumArr = (v: unknown): v is number[] => Array.isArray(v) && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+    if (type === 'table2d') {
+        const ok = Array.isArray(value) && value.length === size && value.every((r) => isNumArr(r) && r.length === size);
+        return ok ? null : `${size} × ${size} の数値の表が必要です（N = ${N}）`;
+    }
+    if (!isNumArr(value) || value.length !== size) return `長さ ${size} の数値の配列が必要です（N = ${N}）`;
+    if (type === 'distribution') {
+        if (value[0] !== 0) return '0 番（空）の割合は 0 にしてください';
+        if (value.some((v) => v < 0)) return '割合に負の値があります';
+        const sum = value.reduce((x, y) => x + y, 0);
+        if (Math.abs(sum - 1) > 1e-6) return `割合の合計が 1 ではありません（${sum}）`;
+    }
+    return null;
 }
 
 export interface RuleFile {
@@ -254,11 +283,15 @@ export function checkRuleFile(x: unknown): RuleFileCheck {
         errors.push('artifacts がありません');
     } else if (N > 0) {
         const size = tableSize(N);
+        // 上から順に作るので、前の artifact の結果だけを参照できる
+        const built: Record<string, ArtifactValue> = {};
         for (const [name, spec] of Object.entries(a)) {
             if (!isObj(spec) || !Array.isArray(spec.baked)) {
                 errors.push(`artifacts.${name}.baked がありません`);
                 continue;
             }
+            const before = { ...built };
+            built[name] = spec.baked as ArtifactValue;
             const pipeline = Array.isArray(spec.pipeline) ? spec.pipeline : [];
             if (pipeline.length === 0) {
                 if (isObj(spec.overrides) && Object.keys(spec.overrides).length > 0) {
@@ -271,7 +304,7 @@ export function checkRuleFile(x: unknown): RuleFileCheck {
                 continue;
             }
             try {
-                const rebaked = bakeArtifact(spec as unknown as ArtifactSpec, N);
+                const rebaked = bakeArtifact(spec as unknown as ArtifactSpec, N, before);
                 // 古いルールファイルも読めるように、食い違いはエラーではなく警告にする（サーバーは baked を使う）
                 if (JSON.stringify(rebaked) !== JSON.stringify(spec.baked)) {
                     warnings.push(`artifacts.${name}：baked がレシピから作り直した結果と一致しません（手で直すなら overrides に書いてください）`);
@@ -307,7 +340,26 @@ export function checkRuleFile(x: unknown): RuleFileCheck {
         errors.push('runtime がありません');
     } else {
         try {
-            resolveRuntime(r as unknown as RuntimeConfig);
+            const config = r as unknown as RuntimeConfig;
+            resolveRuntime(config);
+            // ルールが参照している artifact があって、形が合っているか
+            if (isObj(a) && N > 0) {
+                for (const hook of Object.keys(RULES) as HookName[]) {
+                    const def = RULES[hook][config[hook].rule];
+                    const params = resolveParams(def, config[hook].params);
+                    for (const [key, spec] of Object.entries(def.params)) {
+                        if (spec.type !== 'artifact') continue;
+                        const name = params[key] as string;
+                        const art = a[name];
+                        if (!isObj(art)) {
+                            errors.push(`runtime.${hook}.${key}：artifacts に ${name} がありません`);
+                            continue;
+                        }
+                        const problem = artifactShapeError(spec.artifactType, art.baked, N);
+                        if (problem !== null) errors.push(`artifacts.${name}（runtime.${hook} が ${spec.artifactType} として使う）：${problem}`);
+                    }
+                }
+            }
         } catch (err) {
             errors.push(`runtime: ${(err as Error).message}`);
         }

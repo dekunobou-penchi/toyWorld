@@ -82,6 +82,8 @@ export interface AdminStateMessage {
   running: boolean;
   map: {nx: number, ny: number, data: number[][]};
   players: Player[];
+  /** 目標分布を使うルールのときだけ：目標と今の割合（長さ N+1）と、そのズレ（L1） */
+  distribution?: { target: number[]; current: number[]; l1: number } | null;
 }
 
 

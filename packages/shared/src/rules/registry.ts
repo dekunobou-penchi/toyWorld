@@ -1,22 +1,26 @@
 import type { GameParams } from '../domain.js';
 import {
+    cone,
     energyTableLookup,
     forwardLine,
     fusionTableLookup,
+    mixedRefill,
     randomMap,
     randomRefill,
     randomRespawn,
+    shuffledTarget,
+    surround,
 } from './defaults.js';
 import type { HookName, ParamSpec, ParamValues, RuleDef, RuleSelection, RuntimeConfig, RuntimeHooks } from './types.js';
 
 /** フックごとの使えるルール一覧。新しいルールはここに足す */
 export const RULES: { [H in HookName]: Record<string, RuleDef<H>> } = {
-    initMap: { [randomMap.name]: randomMap },
-    refill: { [randomRefill.name]: randomRefill },
+    initMap: { [randomMap.name]: randomMap, [shuffledTarget.name]: shuffledTarget },
+    refill: { [randomRefill.name]: randomRefill, [mixedRefill.name]: mixedRefill },
     fusion: { [fusionTableLookup.name]: fusionTableLookup },
     energy: { [energyTableLookup.name]: energyTableLookup },
     respawn: { [randomRespawn.name]: randomRespawn },
-    observe: { [forwardLine.name]: forwardLine },
+    observe: { [forwardLine.name]: forwardLine, [surround.name]: surround, [cone.name]: cone },
 };
 
 export function listRules<H extends HookName>(hook: H): RuleDef<H>[] {
