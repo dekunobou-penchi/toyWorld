@@ -1,0 +1,67 @@
+body { margin: 0; background: #E4E4E4; color: #1A1A1A; font-family: 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', sans-serif; font-size: 13px; }
+input, select, button { font: inherit; }
+a { color: #1A1A1A; }
+
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+.titlebar { padding: 6px 12px; background: #2F3B4C; color: #FFFFFF; font-weight: 700; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; padding: 8px 12px; background: #F2F2F2; border-bottom: 1px solid #A6A6A6; }
+.toolbar fieldset { margin: 0; padding: 4px 10px 8px; border: 1px solid #B5B5B5; display: flex; align-items: center; gap: 8px; }
+.toolbar legend { padding: 0 4px; font-size: 11px; color: #4A4A4A; }
+
+.btn { min-height: 28px; padding: 0 10px; border: 1px solid #8C8C8C; background: #FAFAFA; color: #1A1A1A; cursor: pointer; }
+.btn:disabled { color: #8A8A8A; background: #EDEDED; border-color: #B5B5B5; cursor: not-allowed; }
+.btn.primary { border-color: #1F4E8C; background: #DCE8F7; font-weight: 700; }
+.btn.primary:disabled { border-color: #B5B5B5; background: #EDEDED; font-weight: 400; }
+.btn.small { min-height: 24px; padding: 0 8px; }
+.btn.active { border-color: #1F4E8C; background: #CDE0F7; font-weight: 700; }
+
+input[type=number], input[type=text], select { padding: 2px 4px; border: 1px solid #8C8C8C; background: #FFFFFF; }
+input:disabled, select:disabled { background: #F0F0F0; color: #6A6A6A; }
+
+.banner { padding: 8px 12px; background: #FFF4D6; border-bottom: 1px solid #C9A227; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.banner b { font-weight: 700; }
+
+.body { flex: 1; display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; padding: 6px; }
+.panel { min-width: 0; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #A6A6A6; }
+.panel-head { padding: 6px 10px; background: #D9D9D9; border-bottom: 1px solid #A6A6A6; font-weight: 700; }
+.panel-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.nav { flex: 0 0 240px; }
+.edit { flex: 1 1 420px; }
+.preview { flex: 999 1 520px; }
+.edit.wide { flex: 999 1 600px; }
+
+.nav-section { padding: 12px 10px 2px; font-size: 12px; font-weight: 700; color: #4A4A4A; border-bottom: 1px solid #E0E0E0; }
+.nav-section:first-child { padding-top: 6px; }
+.nav-item { display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 5px 10px 5px 22px; border: 0; background: none; text-align: left; cursor: pointer; }
+.nav-item .sub { color: #4A4A4A; }
+.nav-item.current { background: #CDE0F7; outline: 1px solid #5B8BC9; outline-offset: -1px; font-weight: 700; }
+.nav-item.current .sub { font-weight: 400; }
+.mark-error { color: #B91C1C; font-weight: 700; }
+.mark-warn { color: #B3400B; font-weight: 700; }
+
+fieldset.box { margin: 0; padding: 8px 12px 12px; border: 1px solid #A6A6A6; }
+fieldset.box > legend { padding: 0 6px; font-weight: 700; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+
+table.grid { border-collapse: collapse; }
+table.grid.full { width: 100%; }
+table.grid th, table.grid td { padding: 4px 8px; border: 1px solid #C8C8C8; text-align: left; }
+table.grid thead th { background: #F0F0F0; font-weight: 700; }
+table.grid th[scope=row] { background: #F0F0F0; font-weight: 400; }
+table.grid td.num, table.grid th.num { text-align: right; }
+table.grid td.input { padding: 2px 4px; }
+table.grid td.input input, table.grid td.input select { width: 100%; box-sizing: border-box; }
+.muted { color: #4A4A4A; }
+.error-list { margin: 0; padding-left: 18px; color: #B91C1C; }
+.warn-list { margin: 0; padding-left: 18px; color: #9A3412; }
+.scroll { max-height: 420px; overflow: auto; }
+
+.statusbar { display: flex; flex-wrap: wrap; background: #F2F2F2; border-top: 1px solid #A6A6A6; font-size: 12px; }
+.statusbar span { padding: 4px 12px; border-right: 1px solid #C8C8C8; }
+.statusbar .error { color: #B91C1C; font-weight: 700; }
+.statusbar .warn { color: #9A3412; }
+
+.mapgrid { display: grid; gap: 1px; padding: 1px; background: #A6A6A6; width: max-content; }
+.mapgrid > div { display: flex; align-items: center; justify-content: center; box-sizing: border-box; font-size: 10px; }
+.legend { font-size: 11px; }
