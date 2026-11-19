@@ -2,9 +2,6 @@ import { useContext, useEffect, useState } from "react";
 import { AdminContext } from "../context/AdminContext";
 import { AdminMapView } from "../components/AdminMapView";
 
-import { DEFAULT_GAME_PARAMS, ruleFileFromValues, valuesFromParams, type BasicRuleValues, type TransitionMode } from "@game/shared";
-import styles from './Admin.module.css';
-
 interface LibrarySummary {
   name: string;
   version: number;
@@ -24,10 +21,6 @@ function describeError(r: { [k: string]: unknown }): string {
 }
 
 export function Admin() {
-
-  // ルールファイルを作るためのフォームの値（エディタができるまでのつなぎ）
-  const [values, setValues] = useState<BasicRuleValues>(valuesFromParams(DEFAULT_GAME_PARAMS));
-  const [ruleName, setRuleName] = useState('basic');
   const [library, setLibrary] = useState<LibrarySummary[]>([]);
   const [selected, setSelected] = useState('');
   const [seedOverride, setSeedOverride] = useState('');
@@ -49,20 +42,6 @@ export function Admin() {
     throw new Error('AdminContextが見つかりません');
   }
 
-  function setValue<K extends keyof BasicRuleValues>(key: K, value: BasicRuleValues[K]) {
-    setValues({ ...values, [key]: value });
-  }
-
-  async function saveRule(rule: unknown) {
-    const r = await postJson('/api/rules', { name: ruleName, rule });
-    if (!r.ok) {
-      setMessage(`保存できませんでした${describeError(r)}`);
-      return;
-    }
-    setMessage(`${r.name} v${r.version} として保存しました`);
-    await refreshLibrary(`${r.name}@${r.version}`);
-  }
-
   async function handleInit(){
     if (selected === '') {
       setMessage('ルールを選んでください');
@@ -72,18 +51,6 @@ export function Admin() {
     const seed = seedOverride === '' ? undefined : Number(seedOverride);
     const r = await postJson('/api/admin/init', { rule: { name, version: Number(version) }, seed, experimentName });
     setMessage(r.ok ? `${name} v${version}（シード ${r.seed}）で初期化しました` : `初期化できませんでした${describeError(r)}`);
-  }
-
-  function numberInput(key: keyof BasicRuleValues, label: string) {
-    return (
-      <label>{label}: 
-        <input
-          type="number"
-          value={values[key] as number}
-          onChange={(e) => setValue(key, e.target.valueAsNumber as never)}
-        />
-      </label>
-    );
   }
 
   return (
@@ -152,6 +119,7 @@ export function Admin() {
 
       <div>
         <h3>初期化</h3>
+        <p>ルールファイルはルールエディタ（<a href="http://localhost:5174" target="_blank" rel="noreferrer">http://localhost:5174</a>）で作ります。</p>
         <label>ルール: 
           <select value={selected} onChange={(e) => setSelected(e.target.value)}>
             <option value="">（選んでください）</option>
@@ -175,60 +143,6 @@ export function Admin() {
         </div>
         <button onClick={() => handleInit()}>初期化</button>
         {message && <p>{message}</p>}
-      </div>
-
-      <div>
-        <h3>ルールファイルを作ってライブラリに保存</h3>
-        <label>保存する名前: 
-          <input type="text" value={ruleName} onChange={(e) => setRuleName(e.target.value)} />
-        </label>
-
-        <div className={styles.mapForm}>
-          <h4>マップ</h4>
-          {numberInput('nx', 'Ｘ方向の長さ')}
-          {numberInput('ny', 'Y方向の長さ')}
-          {numberInput('N', 'ブロックの種類数 N')}
-        </div>
-
-        <div className={styles.playerForm}>
-          <h4>プレイヤー</h4>
-          {numberInput('lpInitial', 'LP初期値')}
-          {numberInput('lpDecreasePerTick', 'LP減少値')}
-          {numberInput('viewRange', '視界')}
-          {numberInput('seed', 'Seed')}
-        </div>
-
-        <div>
-          <h4>運用</h4>
-          {numberInput('tickIntervalSec', '遷移時間')}
-          <label>モード: 
-            <select value={values.transition} onChange={(e) => setValue('transition', e.target.value as TransitionMode)}>
-              <option value="person">person</option>
-              <option value="agent">agent</option>
-            </select>
-          </label>
-        </div>
-
-        <button onClick={() => saveRule(ruleFileFromValues(values))}>この値でルールファイルを作って保存</button>
-
-        <h4>ルールファイル（JSON）を読み込んで保存</h4>
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-              try {
-                saveRule(JSON.parse(String(reader.result)));
-              } catch {
-                setMessage('JSON として読めませんでした');
-              }
-            };
-            reader.readAsText(file);
-          }}
-        />
       </div>
     </div>
 
