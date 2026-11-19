@@ -1,7 +1,7 @@
 import { Component, useMemo, useState, type ReactNode } from "react";
 import { createRngSet, type Direction, type HookName, type RuleFile, type ViewCell } from "@game/shared";
 import { energyColor, targetNameOf } from "../model";
-import { ctxOf, fakePlayer, initialMap, runtimeOf, simulateRefill } from "../sim";
+import { binomialSd, ctxOf, fakePlayer, initialMap, runtimeOf, simulateRefill } from "../sim";
 
 /** ③ runtime のプレビュー（フックごと） */
 export function HookPreview({ hook, rule }: { hook: HookName; rule: RuleFile }) {
@@ -97,33 +97,13 @@ function RefillPreview({ rule }: { rule: RuleFile }) {
     const [taker, setTaker] = useState<"greedy" | "random">("greedy");
     const [ticks, setTicks] = useState(1000);
     const [rate, setRate] = useState(0.1);
-    const N = rule.constants.N;
-    const energy = (rule.artifacts.energyTable?.baked as number[]) ?? [];
-    // 一番エネルギーが低い ID と高い ID の推移を見る
-    const ids = Array.from({ length: N }, (_, i) => i + 1);
-    const low = ids.reduce((a, b) => ((energy[b] ?? 0) < (energy[a] ?? 0) ? b : a), 1);
-    const high = ids.reduce((a, b) => ((energy[b] ?? 0) > (energy[a] ?? 0) ? b : a), 1);
-    const result = useMemo(() => simulateRefill(rule, { taker, ticks: Math.max(1, ticks | 0), rate: Math.min(Math.max(rate, 0), 1), watch: [low, high] }), [rule, taker, ticks, rate, low, high]);
+    const result = useMemo(() => simulateRefill(rule, { taker, ticks: Math.max(1, ticks | 0), rate: Math.min(Math.max(rate, 0), 1) }), [rule, taker, ticks, rate]);
 
-    const W = 640, H = 260, left = 44, right = 620, top = 20, bottom = 220;
-    const all = [...result.series.flat(), ...(result.target ? [result.target[low], result.target[high]] : [])];
-    const maxY = Math.max(0.05, ...all) * 1.1;
-    const X = (t: number) => left + (t / Math.max(1, result.series[0].length - 1)) * (right - left);
-    const Y = (v: number) => bottom - (v / maxY) * (bottom - top);
-    // 点が多すぎると重いので、最大 300 点くらいに間引く（最後の点は必ず入れる）
-    const line = (s: number[]) => {
-        const step = Math.max(1, Math.floor(s.length / 300));
-        const idx: number[] = [];
-        for (let i = 0; i < s.length; i += step) idx.push(i);
-        if (idx[idx.length - 1] !== s.length - 1) idx.push(s.length - 1);
-        return idx.map((i) => `${X(i).toFixed(1)},${Y(s[i]).toFixed(1)}`).join(" ");
-    };
-    const colors = ["#1A1A1A", "#C2410C"];
     return (
         <>
             <fieldset className="box">
                 <legend>補充シミュレーション</legend>
-                <div className="row" style={{ marginTop: 0, marginBottom: 10, gap: 16 }}>
+                <div className="row" style={{ marginTop: 0, gap: 16 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 8 }}>取り方
                         <span role="group" aria-label="取り方" style={{ display: "flex" }}>
                             <button className={`btn small ${taker === "greedy" ? "active" : ""}`} aria-pressed={taker === "greedy"} onClick={() => setTaker("greedy")}>貪欲</button>
@@ -133,31 +113,111 @@ function RefillPreview({ rule }: { rule: RuleFile }) {
                     <label>長さ（tick） <input type="number" min={1} style={{ width: 72 }} value={ticks} onChange={(e) => setTicks(Number(e.target.value))} /></label>
                     <label>頻度（回/tick） <input type="number" min={0} max={1} step={0.05} style={{ width: 64 }} value={rate} onChange={(e) => setRate(Number(e.target.value))} /></label>
                 </div>
-                <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="ブロック種類ごとのマップ上の割合の推移">
-                    <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#4A4A4A" />
-                    <line x1={left} y1={top} x2={left} y2={bottom} stroke="#4A4A4A" />
-                    <text x={left - 6} y={top + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">{Math.round(maxY * 100)}%</text>
-                    <text x={left - 6} y={bottom + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">0</text>
-                    <text x={left} y={bottom + 18} textAnchor="middle" fontSize="11" fill="#4A4A4A">0</text>
-                    <text x={right} y={bottom + 18} textAnchor="middle" fontSize="11" fill="#4A4A4A">{ticks}</text>
-                    <text x={(left + right) / 2} y={bottom + 34} textAnchor="middle" fontSize="11" fill="#4A4A4A">tick</text>
-                    {result.target && [low, high].map((id, i) => (
-                        <line key={`t${id}`} x1={left} x2={right} y1={Y(result.target![id])} y2={Y(result.target![id])} stroke={colors[i]} strokeDasharray="5 4" />
-                    ))}
-                    {result.series.map((s, i) => <polyline key={i} points={line(s)} fill="none" stroke={colors[i]} strokeWidth={2} />)}
-                </svg>
-                <div className="legend">黒：ID {low}（エネルギー {energy[low]}）　橙：ID {high}（エネルギー {energy[high]}）{result.target ? "　点線：目標" : ""}</div>
             </fieldset>
+            <fieldset className="box">
+                <legend>最後の分布と目標</legend>
+                <DistributionCompare final={result.final} target={result.target} cells={result.cells} />
+            </fieldset>
+            {result.target && (
+                <fieldset className="box">
+                    <legend>目標とのズレ（L1）の推移</legend>
+                    <L1Chart series={result.l1Series} chance={result.l1Chance!} ticks={ticks} />
+                </fieldset>
+            )}
             <fieldset className="box">
                 <legend>集計</legend>
                 <table className="grid">
                     <tbody>
                         <tr><th scope="row">目標とのズレ（L1）</th><td className="num">{result.l1 === null ? "—（目標分布なし）" : result.l1.toFixed(3)}</td></tr>
+                        <tr><th scope="row">偶然でも出る L1 の目安</th><td className="num">{result.l1Chance === null ? "—" : result.l1Chance.toFixed(3)}</td></tr>
+                        <tr><th scope="row">偶然の範囲を外れた ID</th><td className="num">{result.target === null ? "—" : `${result.outside.length} / ${result.final.length - 1}`}</td></tr>
                         <tr><th scope="row">取ったIDと同じIDが補充された割合</th><td className="num">{Math.round(result.sameRate * 100)}%</td></tr>
                         <tr><th scope="row">補充回数</th><td className="num">{result.refills}</td></tr>
                     </tbody>
                 </table>
             </fieldset>
+        </>
+    );
+}
+
+/** ID ごとの最後の割合（棒）と目標（線）、2項分布の ±2σ（帯） */
+function DistributionCompare({ final, target, cells }: { final: number[]; target: number[] | null; cells: number }) {
+    const [hover, setHover] = useState("");
+    const N = final.length - 1;
+    const band = (k: number) => {
+        if (target === null) return null;
+        const sd = binomialSd(target[k], cells);
+        return { lo: Math.max(0, target[k] - 2 * sd), hi: target[k] + 2 * sd };
+    };
+    const W = 640, H = 240, left = 44, right = 630, top = 14, bottom = 200;
+    let maxY = 0.01;
+    for (let k = 1; k <= N; k++) maxY = Math.max(maxY, final[k], band(k)?.hi ?? 0);
+    maxY *= 1.1;
+    const Y = (v: number) => bottom - (v / maxY) * (bottom - top);
+    const bw = (right - left) / Math.max(N, 1);
+    const tickEvery = Math.ceil(N / 20);
+    const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+    return (
+        <>
+            <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="ID ごとの最後の割合と目標" onMouseLeave={() => setHover("")}>
+                <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#4A4A4A" />
+                <line x1={left} y1={top} x2={left} y2={bottom} stroke="#4A4A4A" />
+                <text x={left - 6} y={top + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">{pct(maxY)}</text>
+                <text x={left - 6} y={bottom + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">0</text>
+                {Array.from({ length: N }, (_, i) => {
+                    const k = i + 1;
+                    const x0 = left + i * bw;
+                    const bnd = band(k);
+                    const out = bnd !== null && (final[k] < bnd.lo || final[k] > bnd.hi);
+                    const label = `ID ${k}：最後 ${pct(final[k])}` + (target && bnd ? `／目標 ${pct(target[k])}（偶然の範囲 ${pct(bnd.lo)}〜${pct(bnd.hi)}）${out ? " 範囲外" : ""}` : "");
+                    return (
+                        <g key={k} onMouseEnter={() => setHover(label)}>
+                            <rect x={x0} y={top} width={bw} height={bottom - top} fill="transparent" />
+                            {bnd && <rect x={x0 + bw * 0.05} y={Y(bnd.hi)} width={bw * 0.9} height={Math.max(Y(bnd.lo) - Y(bnd.hi), 1)} fill="#D6E4F5" />}
+                            <rect x={x0 + bw * 0.25} y={Y(final[k])} width={Math.max(bw * 0.5, 1)} height={Math.max(bottom - Y(final[k]), final[k] > 0 ? 1 : 0)} fill={out ? "#C2410C" : "#3B6EB5"} />
+                            {target && <line x1={x0 + bw * 0.05} x2={x0 + bw * 0.95} y1={Y(target[k])} y2={Y(target[k])} stroke="#1A1A1A" strokeWidth={2} />}
+                            {(i % tickEvery === 0 || k === N) && <text x={x0 + bw / 2} y={bottom + 16} textAnchor="middle" fontSize="10" fill="#1A1A1A">{k}</text>}
+                        </g>
+                    );
+                })}
+                <text x={(left + right) / 2} y={bottom + 34} textAnchor="middle" fontSize="11" fill="#4A4A4A">ブロック ID</text>
+            </svg>
+            <div className="legend">
+                {target
+                    ? "棒：最後の割合（橙＝偶然の範囲外）　黒線：目標　水色の帯：偶然の範囲（2項分布の ±2σ）"
+                    : "棒：最後の割合（目標分布がないので比較はしません）"}
+            </div>
+            <div className="muted" aria-live="polite" style={{ minHeight: "1.5em" }}>{hover}</div>
+        </>
+    );
+}
+
+/** tick ごとの L1 と、偶然でも出る L1 の目安（点線） */
+function L1Chart({ series, chance, ticks }: { series: number[]; chance: number; ticks: number }) {
+    const W = 640, H = 220, left = 44, right = 620, top = 14, bottom = 180;
+    const maxY = Math.max(chance, ...series, 0.01) * 1.1;
+    const X = (t: number) => left + (t / Math.max(1, series.length - 1)) * (right - left);
+    const Y = (v: number) => bottom - (v / maxY) * (bottom - top);
+    // 点が多すぎると重いので、最大 300 点くらいに間引く（最後の点は必ず入れる）
+    const step = Math.max(1, Math.floor(series.length / 300));
+    const idx: number[] = [];
+    for (let i = 0; i < series.length; i += step) idx.push(i);
+    if (idx[idx.length - 1] !== series.length - 1) idx.push(series.length - 1);
+    const points = idx.map((i) => `${X(i).toFixed(1)},${Y(series[i]).toFixed(1)}`).join(" ");
+    return (
+        <>
+            <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="目標とのズレ（L1）の推移">
+                <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#4A4A4A" />
+                <line x1={left} y1={top} x2={left} y2={bottom} stroke="#4A4A4A" />
+                <text x={left - 6} y={top + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">{maxY.toFixed(2)}</text>
+                <text x={left - 6} y={bottom + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">0</text>
+                <text x={left} y={bottom + 16} textAnchor="middle" fontSize="11" fill="#4A4A4A">0</text>
+                <text x={right} y={bottom + 16} textAnchor="middle" fontSize="11" fill="#4A4A4A">{ticks}</text>
+                <text x={(left + right) / 2} y={bottom + 32} textAnchor="middle" fontSize="11" fill="#4A4A4A">tick</text>
+                <line x1={left} x2={right} y1={Y(chance)} y2={Y(chance)} stroke="#3B6EB5" strokeDasharray="5 4" />
+                <polyline points={points} fill="none" stroke="#1A1A1A" strokeWidth={2} />
+            </svg>
+            <div className="legend">黒：L1　青の点線：偶然でも出る L1 の目安（目標どおりの確率でばらまいたときの期待値）</div>
         </>
     );
 }
