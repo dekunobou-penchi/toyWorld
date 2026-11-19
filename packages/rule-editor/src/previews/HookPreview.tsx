@@ -1,7 +1,7 @@
 import { Component, useMemo, useState, type ReactNode } from "react";
 import { createRngSet, type Direction, type HookName, type RuleFile, type ViewCell } from "@game/shared";
 import { energyColor, targetNameOf } from "../model";
-import { binomialSd, ctxOf, fakePlayer, initialMap, runtimeOf, simulateRefill } from "../sim";
+import { binomialPmf, binomialSd, ctxOf, fakePlayer, initialMap, runtimeOf, simulateRefill, type RefillSimResult } from "../sim";
 
 /** ③ runtime のプレビュー（フックごと） */
 export function HookPreview({ hook, rule }: { hook: HookName; rule: RuleFile }) {
@@ -97,7 +97,29 @@ function RefillPreview({ rule }: { rule: RuleFile }) {
     const [taker, setTaker] = useState<"greedy" | "random">("greedy");
     const [ticks, setTicks] = useState(1000);
     const [rate, setRate] = useState(0.1);
-    const result = useMemo(() => simulateRefill(rule, { taker, ticks: Math.max(1, ticks | 0), rate: Math.min(Math.max(rate, 0), 1) }), [rule, taker, ticks, rate]);
+    const [burnIn, setBurnIn] = useState(200);
+    const result = useMemo(
+        () => simulateRefill(rule, { taker, ticks: Math.max(1, ticks | 0), rate: Math.min(Math.max(rate, 0), 1), burnIn: Math.max(0, burnIn | 0) }),
+        [rule, taker, ticks, rate, burnIn],
+    );
+    const N = rule.constants.N;
+    // 見る ID：最初は割合（目標、なければ最後の割合）が違う ID を、大・中・小から 1 つずつ
+    const [pickedRaw, setPicked] = useState<number[] | null>(null);
+    const defaultPicks = useMemo(() => {
+        const base = result.target ?? result.final;
+        const byValue = new Map<number, number>();
+        // 期待個数が 1 個未満の ID は 0 に山が立つだけなので、できるだけ避ける
+        const minP = [...base.slice(1)].some((v) => v * result.cells >= 1) ? 1 / result.cells : Number.MIN_VALUE;
+        for (let k = 1; k <= N; k++) if (base[k] >= minP && !byValue.has(base[k])) byValue.set(base[k], k);
+        const ids = [...byValue.entries()].sort((a, b) => b[0] - a[0]).map(([, k]) => k);
+        if (ids.length <= 3) return ids.sort((a, b) => a - b);
+        return [ids[0], ids[Math.floor((ids.length - 1) / 2)], ids[ids.length - 1]].sort((a, b) => a - b);
+    }, [result.target, result.final, result.cells, N]);
+    const picked = (pickedRaw ?? defaultPicks).filter((k) => k >= 1 && k <= N);
+    const toggle = (k: number) => {
+        if (picked.includes(k)) setPicked(picked.filter((x) => x !== k));
+        else if (picked.length < MAX_PICKS) setPicked([...picked, k].sort((a, b) => a - b));
+    };
 
     return (
         <>
@@ -112,11 +134,16 @@ function RefillPreview({ rule }: { rule: RuleFile }) {
                     </span>
                     <label>長さ（tick） <input type="number" min={1} style={{ width: 72 }} value={ticks} onChange={(e) => setTicks(Number(e.target.value))} /></label>
                     <label>頻度（回/tick） <input type="number" min={0} max={1} step={0.05} style={{ width: 64 }} value={rate} onChange={(e) => setRate(Number(e.target.value))} /></label>
+                    <label>集計しない最初の tick <input type="number" min={0} style={{ width: 72 }} value={burnIn} onChange={(e) => setBurnIn(Number(e.target.value))} /></label>
                 </div>
             </fieldset>
             <fieldset className="box">
+                <legend>個数の分布（2項分布との比較）</legend>
+                <CountDistribution result={result} picked={picked} onToggle={toggle} N={N} />
+            </fieldset>
+            <fieldset className="box">
                 <legend>最後の分布と目標</legend>
-                <DistributionCompare final={result.final} target={result.target} cells={result.cells} />
+                <DistributionCompare final={result.final} target={result.target} cells={result.cells} picked={picked} onToggle={toggle} />
             </fieldset>
             {result.target && (
                 <fieldset className="box">
@@ -140,8 +167,80 @@ function RefillPreview({ rule }: { rule: RuleFile }) {
     );
 }
 
+const MAX_PICKS = 5;
+const PICK_COLORS = ["#1F4E9A", "#C2410C", "#2E7D32", "#7B3FA0", "#9A6B00"];
+
+/** 選んだ ID ごとに、理論の 2項分布 B(M, p)（線）と、シミュレーション中の個数のヒストグラム（棒）を重ねる */
+function CountDistribution({ result, picked, onToggle, N }: { result: RefillSimResult; picked: number[]; onToggle: (k: number) => void; N: number }) {
+    const [addId, setAddId] = useState("");
+    const M = result.cells;
+    const series = picked.map((k) => ({
+        k,
+        theory: result.target ? binomialPmf(M, result.target[k]) : null,
+        emp: result.samples > 0 ? result.hist[k].map((n) => n / result.samples) : null,
+    }));
+    // 横軸：どれかの線か棒が見える範囲だけ
+    let lo = M, hi = 0, maxY = 0.01;
+    for (const s of series) {
+        for (let c = 0; c <= M; c++) {
+            const t = s.theory?.[c] ?? 0, e = s.emp?.[c] ?? 0;
+            if (t > 1e-3 || e > 0) { lo = Math.min(lo, c); hi = Math.max(hi, c); }
+            maxY = Math.max(maxY, t, e);
+        }
+    }
+    if (lo > hi) { lo = 0; hi = Math.min(M, 10); }
+    lo = Math.max(0, lo - 1); hi = Math.min(M, hi + 1);
+    maxY *= 1.1;
+    const W = 640, H = 260, left = 44, right = 630, top = 14, bottom = 216;
+    const span = hi - lo + 1;
+    const cw = (right - left) / span;
+    const X = (c: number) => left + (c - lo + 0.5) * cw;
+    const Y = (v: number) => bottom - (v / maxY) * (bottom - top);
+    const tickEvery = Math.ceil(span / 15);
+    const nb = Math.max(series.length, 1);
+    const canAdd = picked.length < MAX_PICKS;
+    const addNum = Number(addId);
+    const addValid = Number.isInteger(addNum) && addNum >= 1 && addNum <= N && !picked.includes(addNum);
+    return (
+        <>
+            <div className="row" style={{ marginTop: 0, flexWrap: "wrap" }}>
+                <span>見る ID</span>
+                {picked.map((k, i) => (
+                    <button key={k} className="btn small" onClick={() => onToggle(k)} title="クリックで外す" style={{ borderColor: PICK_COLORS[i], color: PICK_COLORS[i], fontWeight: 700 }}>ID {k} ✕</button>
+                ))}
+                <input type="number" min={1} max={N} aria-label="追加する ID" style={{ width: 64 }} value={addId} disabled={!canAdd} onChange={(e) => setAddId(e.target.value)} />
+                <button className="btn small" disabled={!canAdd || !addValid} onClick={() => { onToggle(addNum); setAddId(""); }}>＋ 追加</button>
+                <span className="muted">（{MAX_PICKS} 個まで）</span>
+            </div>
+            {picked.length === 0 ? <div className="muted">ID を選んでください</div> : (
+                <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="ID ごとの個数の分布と 2項分布">
+                    <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="#4A4A4A" />
+                    <line x1={left} y1={top} x2={left} y2={bottom} stroke="#4A4A4A" />
+                    <text x={left - 6} y={top + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">{maxY.toFixed(2)}</text>
+                    <text x={left - 6} y={bottom + 4} textAnchor="end" fontSize="11" fill="#4A4A4A">0</text>
+                    {Array.from({ length: span }, (_, i) => lo + i).filter((c) => (c - lo) % tickEvery === 0 || c === hi).map((c) => (
+                        <text key={`x${c}`} x={X(c)} y={bottom + 16} textAnchor="middle" fontSize="10" fill="#1A1A1A">{c}</text>
+                    ))}
+                    <text x={(left + right) / 2} y={bottom + 34} textAnchor="middle" fontSize="11" fill="#4A4A4A">マップ上の個数（{M} マス中）</text>
+                    {series.map((s, i) => s.emp && s.emp.slice(lo, hi + 1).map((v, j) => v > 0 && (
+                        <rect key={`b${s.k}-${j}`} x={left + j * cw + (cw * 0.8 * i) / nb + cw * 0.1} y={Y(v)} width={Math.max((cw * 0.8) / nb, 1)} height={bottom - Y(v)} fill={PICK_COLORS[i]} fillOpacity={0.35} />
+                    )))}
+                    {series.map((s, i) => s.theory && (
+                        <polyline key={`l${s.k}`} fill="none" stroke={PICK_COLORS[i]} strokeWidth={2}
+                            points={s.theory.slice(lo, hi + 1).map((v, j) => `${X(lo + j).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")} />
+                    ))}
+                </svg>
+            )}
+            <div className="legend">
+                {result.target ? "線：目標どおりにばらまいたときの 2項分布 B(M, p)　薄い棒：シミュレーション中にその個数だった tick の割合" : "薄い棒：シミュレーション中にその個数だった tick の割合（目標分布がないので 2項分布は出しません）"}
+                {`　集計した tick：${result.samples}`}
+            </div>
+        </>
+    );
+}
+
 /** ID ごとの最後の割合（棒）と目標（線）、2項分布の ±2σ（帯） */
-function DistributionCompare({ final, target, cells }: { final: number[]; target: number[] | null; cells: number }) {
+function DistributionCompare({ final, target, cells, picked, onToggle }: { final: number[]; target: number[] | null; cells: number; picked: number[]; onToggle: (k: number) => void }) {
     const [hover, setHover] = useState("");
     const N = final.length - 1;
     const band = (k: number) => {
@@ -171,8 +270,8 @@ function DistributionCompare({ final, target, cells }: { final: number[]; target
                     const out = bnd !== null && (final[k] < bnd.lo || final[k] > bnd.hi);
                     const label = `ID ${k}：最後 ${pct(final[k])}` + (target && bnd ? `／目標 ${pct(target[k])}（偶然の範囲 ${pct(bnd.lo)}〜${pct(bnd.hi)}）${out ? " 範囲外" : ""}` : "");
                     return (
-                        <g key={k} onMouseEnter={() => setHover(label)}>
-                            <rect x={x0} y={top} width={bw} height={bottom - top} fill="transparent" />
+                        <g key={k} onMouseEnter={() => setHover(label)} onClick={() => onToggle(k)} style={{ cursor: "pointer" }}>
+                            <rect x={x0} y={top} width={bw} height={bottom - top} fill={picked.includes(k) ? PICK_COLORS[picked.indexOf(k)] : "transparent"} fillOpacity={0.12} />
                             {bnd && <rect x={x0 + bw * 0.05} y={Y(bnd.hi)} width={bw * 0.9} height={Math.max(Y(bnd.lo) - Y(bnd.hi), 1)} fill="#D6E4F5" />}
                             <rect x={x0 + bw * 0.25} y={Y(final[k])} width={Math.max(bw * 0.5, 1)} height={Math.max(bottom - Y(final[k]), final[k] > 0 ? 1 : 0)} fill={out ? "#C2410C" : "#3B6EB5"} />
                             {target && <line x1={x0 + bw * 0.05} x2={x0 + bw * 0.95} y1={Y(target[k])} y2={Y(target[k])} stroke="#1A1A1A" strokeWidth={2} />}
@@ -184,8 +283,8 @@ function DistributionCompare({ final, target, cells }: { final: number[]; target
             </svg>
             <div className="legend">
                 {target
-                    ? "棒：最後の割合（橙＝偶然の範囲外）　黒線：目標　水色の帯：偶然の範囲（2項分布の ±2σ）"
-                    : "棒：最後の割合（目標分布がないので比較はしません）"}
+                    ? "棒：最後の割合（橙＝偶然の範囲外）　黒線：目標　水色の帯：偶然の範囲（2項分布の ±2σ）　クリックで上のグラフに追加・削除"
+                    : "棒：最後の割合（目標分布がないので比較はしません）　クリックで上のグラフに追加・削除"}
             </div>
             <div className="muted" aria-live="polite" style={{ minHeight: "1.5em" }}>{hover}</div>
         </>

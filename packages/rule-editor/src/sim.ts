@@ -71,6 +71,8 @@ export interface RefillSimOptions {
     ticks: number;
     /** 1 tick に取る回数の期待値（0〜1） */
     rate: number;
+    /** 個数のヒストグラムに入れない最初の tick 数 */
+    burnIn: number;
 }
 
 export interface RefillSimResult {
@@ -86,6 +88,10 @@ export interface RefillSimResult {
     l1Chance: number | null;
     /** 2項分布の ±2σ（約95%）から外れた ID */
     outside: number[];
+    /** hist[id][c] = そのIDが c 個だった tick の数（burnIn より後だけ数える） */
+    hist: number[][];
+    /** ヒストグラムに入れた tick 数 */
+    samples: number;
     sameRate: number;
     refills: number;
 }
@@ -100,6 +106,16 @@ function proportions(map: number[][], N: number): number[] {
 /** 割合 p の ID が M マス中に占める割合の標準偏差（2項分布 B(M, p) を M で割ったもの） */
 export function binomialSd(p: number, M: number): number {
     return Math.sqrt((p * (1 - p)) / M);
+}
+
+/** 2項分布 B(M, p) の確率 P(X = c)（c = 0..M）。大きな M でも溢れないように対数で計算する */
+export function binomialPmf(M: number, p: number): number[] {
+    if (p <= 0) return Array.from({ length: M + 1 }, (_, c) => (c === 0 ? 1 : 0));
+    if (p >= 1) return Array.from({ length: M + 1 }, (_, c) => (c === M ? 1 : 0));
+    const lf = [0];
+    for (let i = 1; i <= M; i++) lf.push(lf[i - 1] + Math.log(i));
+    const lp = Math.log(p), lq = Math.log(1 - p);
+    return Array.from({ length: M + 1 }, (_, c) => Math.exp(lf[M] - lf[c] - lf[M - c] + c * lp + (M - c) * lq));
 }
 
 function l1Of(target: number[], p: number[]): number {
@@ -123,13 +139,23 @@ export function simulateRefill(rule: RuleFile, opt: RefillSimOptions): RefillSim
     const tName = targetNameOf(rule);
     const target = tName !== null && Array.isArray(rule.artifacts[tName]?.baked) ? (rule.artifacts[tName].baked as number[]) : null;
 
+    const M = nx * ny;
     const l1Series: number[] = [];
     let same = 0;
     let refills = 0;
-    const record = () => {
+    // ID ごとの今の個数（1 マス変わるたびに更新する）
+    const count = new Array(N + 1).fill(0);
+    for (const row of map) for (const v of row) if (v >= 1 && v <= N) count[v]++;
+    const hist = Array.from({ length: N + 1 }, () => new Array(M + 1).fill(0) as number[]);
+    let samples = 0;
+    const record = (t: number) => {
         if (target !== null) l1Series.push(l1Of(target, proportions(map, N)));
+        if (t >= opt.burnIn) {
+            for (let k = 1; k <= N; k++) hist[k][count[k]]++;
+            samples++;
+        }
     };
-    record();
+    record(0);
     for (let t = 0; t < opt.ticks; t++) {
         if (agentRng() < opt.rate) {
             let best = { x: 0, y: 0, e: -Infinity };
@@ -145,13 +171,14 @@ export function simulateRefill(rule: RuleFile, opt: RefillSimOptions): RefillSim
                 map[best.y][best.x] = 0;
                 const b = rt.refill(ctx, { x: best.x, y: best.y }, "get");
                 map[best.y][best.x] = b;
+                if (taken >= 1 && taken <= N) count[taken]--;
+                if (b >= 1 && b <= N) count[b]++;
                 refills++;
                 if (b === taken) same++;
             }
         }
-        record();
+        record(t + 1);
     }
-    const M = nx * ny;
     const final = proportions(map, N);
     let l1: number | null = null, l1Chance: number | null = null;
     const outside: number[] = [];
@@ -163,5 +190,5 @@ export function simulateRefill(rule: RuleFile, opt: RefillSimOptions): RefillSim
             if (Math.abs(final[k] - target[k]) > 2 * binomialSd(target[k], M)) outside.push(k);
         }
     }
-    return { cells: M, target, final, l1Series, l1, l1Chance, outside, sameRate: refills === 0 ? 0 : same / refills, refills };
+    return { cells: M, target, final, l1Series, l1, l1Chance, outside, hist, samples, sameRate: refills === 0 ? 0 : same / refills, refills };
 }
