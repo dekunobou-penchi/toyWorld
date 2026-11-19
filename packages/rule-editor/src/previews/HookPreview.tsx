@@ -156,8 +156,8 @@ function RefillPreview({ rule }: { rule: RuleFile }) {
                 <table className="grid">
                     <tbody>
                         <tr><th scope="row">目標とのズレ（L1）</th><td className="num">{result.l1 === null ? "—（目標分布なし）" : result.l1.toFixed(3)}</td></tr>
-                        <tr><th scope="row">偶然でも出る L1 の目安</th><td className="num">{result.l1Chance === null ? "—" : result.l1Chance.toFixed(3)}</td></tr>
-                        <tr><th scope="row">偶然の範囲を外れた ID</th><td className="num">{result.target === null ? "—" : `${result.outside.length} / ${result.final.length - 1}`}</td></tr>
+                        <tr><th scope="row">偶然でも出る L1（95%）</th><td className="num">{result.l1Chance === null ? "—" : result.l1Chance.toFixed(3)}</td></tr>
+                        <tr><th scope="row">偶然の範囲を外れた ID</th><td className="num">{result.target === null ? "—" : `${result.outside.length} / ${result.final.length - 1}（偶然でも約 ${result.outsideExpected!.toFixed(1)} 個）`}</td></tr>
                         <tr><th scope="row">取ったIDと同じIDが補充された割合</th><td className="num">{Math.round(result.sameRate * 100)}%</td></tr>
                         <tr><th scope="row">補充回数</th><td className="num">{result.refills}</td></tr>
                     </tbody>
@@ -316,7 +316,7 @@ function L1Chart({ series, chance, ticks }: { series: number[]; chance: number; 
                 <line x1={left} x2={right} y1={Y(chance)} y2={Y(chance)} stroke="#3B6EB5" strokeDasharray="5 4" />
                 <polyline points={points} fill="none" stroke="#1A1A1A" strokeWidth={2} />
             </svg>
-            <div className="legend">黒：L1　青の点線：偶然でも出る L1 の目安（目標どおりの確率でばらまいたときの期待値）</div>
+            <div className="legend">黒：L1　青の点線：目標どおりにばらまいても 95% はこれ以下になる L1（これを超えていたら偶然ではない偏り）</div>
         </>
     );
 }

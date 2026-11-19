@@ -84,10 +84,12 @@ export interface RefillSimResult {
     /** tick ごとの目標とのズレ（L1）。目標分布がなければ空 */
     l1Series: number[];
     l1: number | null;
-    /** 目標どおりの確率で M マスにばらまいたときに出る L1 の期待値 */
+    /** 目標どおりの確率で M マスにばらまいたとき、L1 の 95% がこれ以下になる値（モンテカルロで求める） */
     l1Chance: number | null;
     /** 2項分布の ±2σ（約95%）から外れた ID */
     outside: number[];
+    /** 目標どおりにばらまいても ±2σ から外れる ID の数の期待値（2項分布から正確に計算） */
+    outsideExpected: number | null;
     /** hist[id][c] = そのIDが c 個だった tick の数（burnIn より後だけ数える） */
     hist: number[][];
     /** ヒストグラムに入れた tick 数 */
@@ -116,6 +118,43 @@ export function binomialPmf(M: number, p: number): number[] {
     for (let i = 1; i <= M; i++) lf.push(lf[i - 1] + Math.log(i));
     const lp = Math.log(p), lq = Math.log(1 - p);
     return Array.from({ length: M + 1 }, (_, c) => Math.exp(lf[M] - lf[c] - lf[M - c] + c * lp + (M - c) * lq));
+}
+
+/** 目標どおりの確率で M マスにばらまく（多項分布）のを trials 回やって、L1 の q 分位点を返す */
+export function chanceL1(target: number[], M: number, seed: number, trials = 300, q = 0.95): number {
+    const rng = createRng(seed);
+    const N = target.length - 1;
+    const cum: number[] = [];
+    let acc = 0;
+    for (let k = 1; k <= N; k++) { acc += target[k]; cum.push(acc); }
+    const l1s: number[] = [];
+    const c = new Array(N + 1);
+    for (let t = 0; t < trials; t++) {
+        c.fill(0);
+        for (let i = 0; i < M; i++) {
+            const r = rng() * acc;
+            let lo = 0, hi = N - 1;
+            while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] > r) hi = mid; else lo = mid + 1; }
+            c[lo + 1]++;
+        }
+        let l1 = 0;
+        for (let k = 1; k <= N; k++) l1 += Math.abs(c[k] / M - target[k]);
+        l1s.push(l1);
+    }
+    l1s.sort((a, b) => a - b);
+    return l1s[Math.min(trials - 1, Math.floor(q * trials))];
+}
+
+/** 目標どおりにばらまいたとき、±2σ から外れる ID の数の期待値 */
+function expectedOutside(target: number[], M: number): number {
+    let sum = 0;
+    for (let k = 1; k < target.length; k++) {
+        const p = target[k];
+        if (p <= 0 || p >= 1) continue;
+        const sd = binomialSd(p, M);
+        sum += binomialPmf(M, p).reduce((a, v, c) => a + (Math.abs(c / M - p) > 2 * sd ? v : 0), 0);
+    }
+    return sum;
 }
 
 function l1Of(target: number[], p: number[]): number {
@@ -180,15 +219,15 @@ export function simulateRefill(rule: RuleFile, opt: RefillSimOptions): RefillSim
         record(t + 1);
     }
     const final = proportions(map, N);
-    let l1: number | null = null, l1Chance: number | null = null;
+    let l1: number | null = null, l1Chance: number | null = null, outsideExpected: number | null = null;
     const outside: number[] = [];
     if (target !== null) {
         l1 = l1Of(target, final);
-        // |X - p| の期待値は正規近似で sqrt(2/π)·σ
-        l1Chance = target.reduce((a, v, k) => a + (k === 0 ? 0 : Math.sqrt(2 / Math.PI) * binomialSd(v, M)), 0);
+        l1Chance = chanceL1(target, M, rule.constants.seed ^ 0x2545f491);
+        outsideExpected = expectedOutside(target, M);
         for (let k = 1; k <= N; k++) {
             if (Math.abs(final[k] - target[k]) > 2 * binomialSd(target[k], M)) outside.push(k);
         }
     }
-    return { cells: M, target, final, l1Series, l1, l1Chance, outside, hist, samples, sameRate: refills === 0 ? 0 : same / refills, refills };
+    return { cells: M, target, final, l1Series, l1, l1Chance, outside, outsideExpected, hist, samples, sameRate: refills === 0 ? 0 : same / refills, refills };
 }
