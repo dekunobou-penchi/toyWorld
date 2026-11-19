@@ -71,15 +71,21 @@ export interface RefillSimOptions {
     ticks: number;
     /** 1 tick に取る回数の期待値（0〜1） */
     rate: number;
-    /** 推移を記録する ID */
-    watch: number[];
 }
 
 export interface RefillSimResult {
-    /** watch の ID ごとの、tick ごとのマップ上の割合 */
-    series: number[][];
+    /** マップのマス数（2項分布の試行回数 M） */
+    cells: number;
     target: number[] | null;
+    /** シミュレーション最後のマップ上の割合（index 0 は使わない） */
+    final: number[];
+    /** tick ごとの目標とのズレ（L1）。目標分布がなければ空 */
+    l1Series: number[];
     l1: number | null;
+    /** 目標どおりの確率で M マスにばらまいたときに出る L1 の期待値 */
+    l1Chance: number | null;
+    /** 2項分布の ±2σ（約95%）から外れた ID */
+    outside: number[];
     sameRate: number;
     refills: number;
 }
@@ -89,6 +95,15 @@ function proportions(map: number[][], N: number): number[] {
     let total = 0;
     for (const row of map) for (const v of row) { total++; if (v >= 1 && v <= N) c[v]++; }
     return c.map((x) => x / total);
+}
+
+/** 割合 p の ID が M マス中に占める割合の標準偏差（2項分布 B(M, p) を M で割ったもの） */
+export function binomialSd(p: number, M: number): number {
+    return Math.sqrt((p * (1 - p)) / M);
+}
+
+function l1Of(target: number[], p: number[]): number {
+    return target.reduce((a, v, k) => a + (k === 0 ? 0 : Math.abs(v - (p[k] ?? 0))), 0);
 }
 
 /**
@@ -108,12 +123,11 @@ export function simulateRefill(rule: RuleFile, opt: RefillSimOptions): RefillSim
     const tName = targetNameOf(rule);
     const target = tName !== null && Array.isArray(rule.artifacts[tName]?.baked) ? (rule.artifacts[tName].baked as number[]) : null;
 
-    const series = opt.watch.map(() => [] as number[]);
+    const l1Series: number[] = [];
     let same = 0;
     let refills = 0;
     const record = () => {
-        const p = proportions(map, N);
-        opt.watch.forEach((id, i) => series[i].push(p[id] ?? 0));
+        if (target !== null) l1Series.push(l1Of(target, proportions(map, N)));
     };
     record();
     for (let t = 0; t < opt.ticks; t++) {
@@ -137,7 +151,17 @@ export function simulateRefill(rule: RuleFile, opt: RefillSimOptions): RefillSim
         }
         record();
     }
-    const p = proportions(map, N);
-    const l1 = target === null ? null : target.reduce((a, v, k) => a + (k === 0 ? 0 : Math.abs(v - p[k])), 0);
-    return { series, target, l1, sameRate: refills === 0 ? 0 : same / refills, refills };
+    const M = nx * ny;
+    const final = proportions(map, N);
+    let l1: number | null = null, l1Chance: number | null = null;
+    const outside: number[] = [];
+    if (target !== null) {
+        l1 = l1Of(target, final);
+        // |X - p| の期待値は正規近似で sqrt(2/π)·σ
+        l1Chance = target.reduce((a, v, k) => a + (k === 0 ? 0 : Math.sqrt(2 / Math.PI) * binomialSd(v, M)), 0);
+        for (let k = 1; k <= N; k++) {
+            if (Math.abs(final[k] - target[k]) > 2 * binomialSd(target[k], M)) outside.push(k);
+        }
+    }
+    return { cells: M, target, final, l1Series, l1, l1Chance, outside, sameRate: refills === 0 ? 0 : same / refills, refills };
 }
